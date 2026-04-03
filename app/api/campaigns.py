@@ -56,6 +56,7 @@ def _campaign_to_response(campaign: Campaign) -> CampaignResponse:
     return CampaignResponse(
         id=campaign.id,
         name=campaign.name,
+        context=campaign.context,
         status=campaign.status.value,
         dry_run=campaign.dry_run,
         csv_filename=campaign.csv_filename,
@@ -78,6 +79,7 @@ async def create_campaign(
     try:
         campaign = Campaign(
             name=request.name,
+            context=request.context,
             dry_run=request.dry_run,
             status=CampaignStatus.CREATED,
         )
@@ -184,6 +186,7 @@ async def analyze_campaign(
         
         initial_state = CampaignGraphState(
             campaign_id=campaign_id,
+            context=campaign.context or "",
             csv_path=campaign.csv_storage_path,
             dry_run=campaign.dry_run,
         )

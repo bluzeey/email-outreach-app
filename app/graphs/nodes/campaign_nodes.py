@@ -32,6 +32,7 @@ class CampaignGraphNodes:
                 return state
             
             state.csv_path = campaign.csv_storage_path
+            state.context = campaign.context or ""  # Load campaign context
             state.status = "profiling"
             
         except Exception as e:
@@ -163,17 +164,17 @@ class CampaignGraphNodes:
         
         return state
     
-    async def campaign_review_interrupt(self, state: CampaignGraphState) -> CampaignGraphState:
-        """Wait for campaign approval."""
-        logger.info(f"Waiting for campaign approval: {state.campaign_id}")
+    async def await_approval_status(self, state: CampaignGraphState) -> CampaignGraphState:
+        """Set campaign status to await_approval_review and end.
         
-        # This node pauses the graph for human review
-        # The graph will resume when approval is received
+        This node completes the analysis phase. Human approval will be handled
+        via separate API call, not via graph execution.
+        """
+        logger.info(f"Analysis complete for campaign {state.campaign_id}, awaiting approval")
         
-        if state.approval_status == "approved":
-            state.status = "running"
-        elif state.approval_status == "rejected":
-            state.status = "cancelled"
+        # Set status to indicate we're waiting for approval
+        state.status = "awaiting_approval_review"
+        state.approval_status = "pending"
         
         return state
     

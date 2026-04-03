@@ -28,6 +28,13 @@
                 </div>
                 
                 <div class="form-group">
+                    <label for="context">Campaign Context / Purpose</label>
+                    <textarea id="context" name="context" rows="4" 
+                              placeholder="Describe what this campaign is about. For example: 'Inviting AI researchers to our annual conference in San Francisco. Emphasize networking opportunities and keynote speakers.'"></textarea>
+                    <small>This helps the AI understand your intent and generate better personalized emails.</small>
+                </div>
+                
+                <div class="form-group">
                     <label for="dry-run">
                         <input type="checkbox" id="dry-run" name="dry_run" checked>
                         Dry-run mode (generate previews only, don't send emails)
@@ -51,13 +58,14 @@
             e.preventDefault();
             
             const name = document.getElementById('name').value;
+            const context = document.getElementById('context').value;
             const dryRun = document.getElementById('dry-run').checked;
             
             try {
                 const response = await fetch('/api/campaigns', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, dry_run: dryRun })
+                    body: JSON.stringify({ name, context, dry_run: dryRun })
                 });
                 
                 const data = await response.json();

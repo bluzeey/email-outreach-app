@@ -10,6 +10,7 @@ class CampaignCreateRequest(BaseModel):
     """Create campaign request."""
     
     name: str
+    context: str = ""  # Campaign context/purpose (e.g., "inviting researchers to conference")
     dry_run: bool = True
 
 
@@ -20,6 +21,7 @@ class CampaignResponse(BaseModel):
     
     id: str
     name: str
+    context: str | None = None
     status: str
     dry_run: bool
     csv_filename: str | None = None

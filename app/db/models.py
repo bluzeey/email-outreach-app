@@ -85,6 +85,7 @@ class Campaign(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
+    context = Column(Text, nullable=True)  # Campaign context/purpose for AI
     gmail_account_id = Column(String, ForeignKey("gmail_accounts.id"), nullable=True)
     
     # Status

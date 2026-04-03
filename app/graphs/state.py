@@ -9,6 +9,7 @@ class CampaignGraphState(BaseModel):
     """State for campaign graph."""
     
     campaign_id: str
+    context: str = ""  # Campaign context/purpose for AI
     gmail_account_id: str | None = None
     csv_path: str | None = None
     csv_profile: dict | None = None
@@ -25,7 +26,7 @@ class CampaignGraphState(BaseModel):
         "created",
         "profiling",
         "awaiting_schema_review",
-        "awaiting_campaign_approval",
+        "awaiting_approval_review",
         "running",
         "paused",
         "completed",

@@ -12,79 +12,35 @@ logger = get_logger(__name__)
 
 
 def create_campaign_graph(session):
-    """Create campaign graph."""
+    """Create campaign graph for analysis phase only.
+    
+    The graph completes the analysis and stops, waiting for human approval
+    via a separate API call. This avoids infinite recursion.
+    """
     
     nodes = CampaignGraphNodes(session)
     
     # Define graph
     workflow = StateGraph(CampaignGraphState)
     
-    # Add nodes
+    # Add nodes - only up to sample drafts generation
     workflow.add_node("load_csv", nodes.load_csv)
     workflow.add_node("profile_csv", nodes.profile_csv)
     workflow.add_node("infer_schema", nodes.infer_schema)
     workflow.add_node("infer_campaign_plan", nodes.infer_campaign_plan)
     workflow.add_node("generate_sample_drafts", nodes.generate_sample_drafts)
-    workflow.add_node("campaign_review_interrupt", nodes.campaign_review_interrupt)
-    workflow.add_node("prepare_recipient_records", nodes.prepare_recipient_records)
-    workflow.add_node("dispatch_recipient_runs", nodes.dispatch_recipient_runs)
-    workflow.add_node("aggregate_progress", nodes.aggregate_progress)
-    workflow.add_node("finalize_campaign", nodes.finalize_campaign)
+    workflow.add_node("await_approval", nodes.await_approval_status)
     
-    # Define edges
+    # Define edges - linear flow ending at await_approval
     workflow.set_entry_point("load_csv")
     workflow.add_edge("load_csv", "profile_csv")
     workflow.add_edge("profile_csv", "infer_schema")
     workflow.add_edge("infer_schema", "infer_campaign_plan")
     workflow.add_edge("infer_campaign_plan", "generate_sample_drafts")
-    workflow.add_edge("generate_sample_drafts", "campaign_review_interrupt")
-    
-    # Review interrupt - conditional
-    def review_router(state: CampaignGraphState):
-        if state.approval_status == "approved":
-            return "prepare_recipient_records"
-        elif state.approval_status == "rejected":
-            return "finalize_campaign"
-        else:
-            return "campaign_review_interrupt"  # Loop back to wait
-    
-    workflow.add_conditional_edges(
-        "campaign_review_interrupt",
-        review_router,
-        {
-            "prepare_recipient_records": "prepare_recipient_records",
-            "finalize_campaign": "finalize_campaign",
-            "campaign_review_interrupt": "campaign_review_interrupt",
-        }
-    )
-    
-    workflow.add_edge("prepare_recipient_records", "dispatch_recipient_runs")
-    workflow.add_edge("dispatch_recipient_runs", "aggregate_progress")
-    
-    # Progress aggregation - loop until complete
-    def progress_router(state: CampaignGraphState):
-        if state.status == "completed":
-            return "finalize_campaign"
-        elif state.status == "cancelled":
-            return "finalize_campaign"
-        elif state.status == "paused":
-            return END
-        else:
-            return "dispatch_recipient_runs"  # Continue processing
-    
-    workflow.add_conditional_edges(
-        "aggregate_progress",
-        progress_router,
-        {
-            "finalize_campaign": "finalize_campaign",
-            "dispatch_recipient_runs": "dispatch_recipient_runs",
-        }
-    )
-    
-    workflow.add_edge("finalize_campaign", END)
+    workflow.add_edge("generate_sample_drafts", "await_approval")
+    workflow.add_edge("await_approval", END)
     
     # Compile with checkpointing
-    # Convert checkpoint URL for aiosqlite
     checkpoint_url = settings.CHECKPOINT_DATABASE_URL
     if checkpoint_url.startswith("sqlite:///"):
         checkpoint_url = checkpoint_url.replace("sqlite:///", "sqlite+aiosqlite:///")

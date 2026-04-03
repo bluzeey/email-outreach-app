@@ -34,7 +34,7 @@
         
         async function loadCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}`);
+                const response = await fetch(`/api/campaigns/${campaignId}`);
                 const campaign = await response.json();
                 
                 if (!response.ok) {
@@ -155,7 +155,7 @@
         
         async function loadProgress() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/progress`);
+                const response = await fetch(`/api/campaigns/${campaignId}/progress`);
                 const progress = await response.json();
                 
                 const section = document.getElementById('progress-section');
@@ -174,7 +174,7 @@
         
         async function loadRows() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/rows?page=1&page_size=10`);
+                const response = await fetch(`/api/campaigns/${campaignId}/rows?page=1&page_size=10`);
                 const data = await response.json();
                 
                 const section = document.getElementById('rows-section');
@@ -226,7 +226,7 @@
         // Action handlers
         async function analyzeCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/analyze`, { method: 'POST' });
+                const response = await fetch(`/api/campaigns/${campaignId}/analyze`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (response.ok) {
@@ -242,7 +242,7 @@
         
         async function approveCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/approve`, { method: 'POST' });
+                const response = await fetch(`/api/campaigns/${campaignId}/approve`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
@@ -260,7 +260,7 @@
             if (!confirm('Are you sure you want to reject this campaign?')) return;
             
             try {
-                const response = await fetch(`/campaigns/${campaignId}/reject`, { method: 'POST' });
+                const response = await fetch(`/api/campaigns/${campaignId}/reject`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
@@ -273,7 +273,7 @@
         
         async function runCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/run`, { method: 'POST' });
+                const response = await fetch(`/api/campaigns/${campaignId}/run`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
@@ -289,7 +289,7 @@
         
         async function pauseCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/pause`, { method: 'POST' });
+                const response = await fetch(`/api/campaigns/${campaignId}/pause`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
@@ -302,7 +302,7 @@
         
         async function exportCampaign() {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/export?format=csv`);
+                const response = await fetch(`/api/campaigns/${campaignId}/export?format=csv`);
                 const data = await response.json();
                 
                 if (data.download_url) {
@@ -315,7 +315,7 @@
         
         async function approveRow(rowId) {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/rows/${rowId}/approve`, {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${rowId}/approve`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ decision: 'approved' })
@@ -331,7 +331,7 @@
         
         async function rejectRow(rowId) {
             try {
-                const response = await fetch(`/campaigns/${campaignId}/rows/${rowId}/reject`, {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${rowId}/reject`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ decision: 'rejected' })
@@ -353,7 +353,7 @@
                 const formData = new FormData(e.target);
                 
                 try {
-                    const response = await fetch(`/campaigns/${campaignId}/upload-csv`, {
+                    const response = await fetch(`/api/campaigns/${campaignId}/upload-csv`, {
                         method: 'POST',
                         body: formData
                     });

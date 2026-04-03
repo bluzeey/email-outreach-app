@@ -54,7 +54,7 @@
             const dryRun = document.getElementById('dry-run').checked;
             
             try {
-                const response = await fetch('/campaigns', {
+                const response = await fetch('/api/campaigns', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, dry_run: dryRun })

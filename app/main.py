@@ -58,11 +58,11 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Include API routers
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
-app.include_router(reviews.router, prefix="/campaigns", tags=["reviews"])
+# Include routers - Pages first for HTML routes to take precedence
 app.include_router(pages.router, tags=["pages"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
+app.include_router(reviews.router, prefix="/api/campaigns", tags=["reviews"])
 
 
 if __name__ == "__main__":

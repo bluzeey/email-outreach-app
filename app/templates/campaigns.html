@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campaigns - Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Outreach App</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/campaigns">Campaigns</a>
+                <a href="/auth">Connect Gmail</a>
+            </nav>
+        </header>
+        
+        <main>
+            <div class="page-header">
+                <h2>Campaigns</h2>
+                <a href="/campaigns/new" class="btn btn-primary">+ New Campaign</a>
+            </div>
+            
+            <div id="campaigns-list">
+                <p>Loading campaigns...</p>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+        </footer>
+    </div>
+    
+    <script>
+        async function loadCampaigns() {
+            try {
+                const response = await fetch('/campaigns');
+                const data = await response.json();
+                
+                const container = document.getElementById('campaigns-list');
+                
+                if (data.campaigns.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <p>No campaigns yet. Create your first campaign to get started.</p>
+                            <a href="/campaigns/new" class="btn btn-primary">Create Campaign</a>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const table = document.createElement('table');
+                table.className = 'data-table';
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Dry Run</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.campaigns.map(c => `
+                            <tr>
+                                <td>${c.name}</td>
+                                <td><span class="status-badge status-${c.status}">${c.status}</span></td>
+                                <td>${c.dry_run ? 'Yes' : 'No'}</td>
+                                <td>${new Date(c.created_at).toLocaleDateString()}</td>
+                                <td>
+                                    <a href="/campaigns/${c.id}" class="btn btn-small">View</a>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                `;
+                
+                container.innerHTML = '';
+                container.appendChild(table);
+                
+            } catch (error) {
+                document.getElementById('campaigns-list').innerHTML = `
+                    <div class="error">Failed to load campaigns: ${error.message}</div>
+                `;
+            }
+        }
+        
+        loadCampaigns();
+    </script>
+</body>
+</html>

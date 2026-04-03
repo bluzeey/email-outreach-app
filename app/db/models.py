@@ -1,0 +1,232 @@
+"""Database models."""
+
+import enum
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.orm import relationship
+
+from app.db.base import Base
+
+
+class CampaignStatus(str, enum.Enum):
+    CREATED = "created"
+    PROFILING = "profiling"
+    AWAITING_SCHEMA_REVIEW = "awaiting_schema_review"
+    AWAITING_CAMPAIGN_APPROVAL = "awaiting_campaign_approval"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class RowStatus(str, enum.Enum):
+    QUEUED = "queued"
+    NORMALIZED = "normalized"
+    INELIGIBLE = "ineligible"
+    GENERATED = "generated"
+    VALIDATED = "validated"
+    AWAITING_REVIEW = "awaiting_review"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class SendStatus(str, enum.Enum):
+    PENDING = "pending"
+    DRY_RUN = "dry_run"
+    SENT = "sent"
+    FAILED = "failed"
+    DUPLICATE = "duplicate"
+
+
+class ApprovalDecision(str, enum.Enum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class GmailAccount(Base):
+    """Gmail account model."""
+    
+    __tablename__ = "gmail_accounts"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, nullable=False, unique=True)
+    provider = Column(String, default="google")
+    scopes = Column(JSON, default=list)
+    token_encrypted = Column(Text, nullable=True)
+    refresh_token_encrypted = Column(Text, nullable=True)
+    token_expiry = Column(DateTime, nullable=True)
+    connected_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="active")
+    
+    # Relationships
+    campaigns = relationship("Campaign", back_populates="gmail_account")
+
+
+class Campaign(Base):
+    """Campaign model."""
+    
+    __tablename__ = "campaigns"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    gmail_account_id = Column(String, ForeignKey("gmail_accounts.id"), nullable=True)
+    
+    # Status
+    status = Column(Enum(CampaignStatus), default=CampaignStatus.CREATED)
+    
+    # CSV Storage
+    csv_filename = Column(String, nullable=True)
+    csv_storage_path = Column(String, nullable=True)
+    
+    # Inferred data
+    inferred_schema_json = Column(JSON, default=dict)
+    campaign_plan_json = Column(JSON, default=dict)
+    
+    # Execution tracking
+    totals_json = Column(JSON, default=dict)
+    dry_run = Column(Boolean, default=True)
+    dispatch_cursor = Column(Integer, default=0)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    errors = Column(JSON, default=list)
+    
+    # Relationships
+    gmail_account = relationship("GmailAccount", back_populates="campaigns")
+    rows = relationship("CampaignRow", back_populates="campaign", cascade="all, delete-orphan")
+
+
+class CampaignRow(Base):
+    """Campaign row (recipient) model."""
+    
+    __tablename__ = "campaign_rows"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=False)
+    row_number = Column(Integer, nullable=False)
+    
+    # Raw data
+    raw_row_json = Column(JSON, default=dict)
+    normalized_row_json = Column(JSON, default=dict)
+    
+    # Recipient info
+    recipient_email = Column(String, nullable=True)
+    
+    # Status
+    status = Column(Enum(RowStatus), default=RowStatus.QUEUED)
+    
+    # Validation
+    validation_report_json = Column(JSON, default=dict)
+    eligibility_json = Column(JSON, default=dict)
+    personalization_context_json = Column(JSON, default=dict)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    errors = Column(JSON, default=list)
+    retries = Column(Integer, default=0)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign = relationship("Campaign", back_populates="rows")
+    email_draft = relationship("EmailDraft", back_populates="campaign_row", uselist=False)
+    send_event = relationship("SendEvent", back_populates="campaign_row", uselist=False)
+
+
+class EmailDraft(Base):
+    """Email draft model."""
+    
+    __tablename__ = "email_drafts"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_row_id = Column(String, ForeignKey("campaign_rows.id"), nullable=False)
+    
+    # Content
+    subject = Column(String, nullable=False)
+    plain_text_body = Column(Text, nullable=False)
+    html_body = Column(Text, nullable=False)
+    
+    # Generation metadata
+    personalization_fields_used = Column(JSON, default=list)
+    key_claims_used = Column(JSON, default=list)
+    generation_confidence = Column(Integer, default=0)  # 0-100
+    needs_human_review = Column(Boolean, default=False)
+    review_reasons = Column(JSON, default=list)
+    generation_meta_json = Column(JSON, default=dict)
+    
+    # Validation
+    validation_report_json = Column(JSON, default=dict)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    campaign_row = relationship("CampaignRow", back_populates="email_draft")
+
+
+class SendEvent(Base):
+    """Send event model."""
+    
+    __tablename__ = "send_events"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_row_id = Column(String, ForeignKey("campaign_rows.id"), nullable=False)
+    
+    # Idempotency
+    idempotency_key = Column(String, nullable=False, unique=True)
+    
+    # Provider info
+    provider = Column(String, default="gmail")
+    provider_message_id = Column(String, nullable=True)
+    provider_response_json = Column(JSON, default=dict)
+    
+    # Status
+    status = Column(Enum(SendStatus), default=SendStatus.PENDING)
+    
+    # Timing
+    sent_at = Column(DateTime, nullable=True)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    # Relationships
+    campaign_row = relationship("CampaignRow", back_populates="send_event")
+
+
+class ApprovalEvent(Base):
+    """Approval event model."""
+    
+    __tablename__ = "approval_events"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=False)
+    campaign_row_id = Column(String, ForeignKey("campaign_rows.id"), nullable=True)
+    
+    # Decision
+    decision = Column(Enum(ApprovalDecision), nullable=False)
+    
+    # Reviewer info
+    reviewer = Column(String, default="system")
+    notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)

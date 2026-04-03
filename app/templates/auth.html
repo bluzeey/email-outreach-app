@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect Gmail - Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Outreach App</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/campaigns">Campaigns</a>
+                <a href="/auth">Connect Gmail</a>
+            </nav>
+        </header>
+        
+        <main>
+            <h2>Connect Gmail Account</h2>
+            
+            <div id="auth-status" class="status-box">
+                <p>Checking connection status...</p>
+            </div>
+            
+            <div id="auth-actions" class="actions" style="display: none;">
+                <a id="connect-btn" href="/auth/google/start" class="btn btn-primary">Connect Gmail</a>
+                <button id="disconnect-btn" class="btn btn-secondary" style="display: none;">Disconnect</button>
+            </div>
+            
+            <div class="info">
+                <h3>Required Permissions</h3>
+                <p>This app requires only minimal Gmail permissions:</p>
+                <ul>
+                    <li><strong>Send emails only</strong> - We can only send emails on your behalf</li>
+                </ul>
+                <p>We do NOT request permissions to:</p>
+                <ul>
+                    <li>Read your inbox</li>
+                    <li>Access your contacts</li>
+                    <li>Modify or delete emails</li>
+                </ul>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Check auth status on page load
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/auth/status');
+                const data = await response.json();
+                
+                const statusBox = document.getElementById('auth-status');
+                const actions = document.getElementById('auth-actions');
+                const connectBtn = document.getElementById('connect-btn');
+                const disconnectBtn = document.getElementById('disconnect-btn');
+                
+                actions.style.display = 'block';
+                
+                if (data.connected) {
+                    statusBox.innerHTML = `
+                        <div class="success">
+                            <strong>Connected!</strong><br>
+                            Email: ${data.account.email}<br>
+                            Connected at: ${new Date(data.account.connected_at).toLocaleString()}
+                        </div>
+                    `;
+                    connectBtn.style.display = 'none';
+                    disconnectBtn.style.display = 'inline-block';
+                } else {
+                    statusBox.innerHTML = `
+                        <div class="warning">
+                            No Gmail account connected. Please connect to start sending emails.
+                        </div>
+                    `;
+                    connectBtn.style.display = 'inline-block';
+                    disconnectBtn.style.display = 'none';
+                }
+            } catch (error) {
+                document.getElementById('auth-status').innerHTML = `
+                    <div class="error">Failed to check auth status: ${error.message}</div>
+                `;
+            }
+        }
+        
+        // Handle disconnect
+        document.getElementById('disconnect-btn')?.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/auth/google/disconnect', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Account disconnected');
+                    location.reload();
+                } else {
+                    alert('Failed to disconnect');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+        
+        // Check status on load
+        checkAuthStatus();
+    </script>
+</body>
+</html>

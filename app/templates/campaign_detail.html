@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campaign Details - Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/campaign.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Outreach App</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/campaigns">Campaigns</a>
+                <a href="/auth">Connect Gmail</a>
+            </nav>
+        </header>
+        
+        <main>
+            <div id="campaign-details">
+                <p>Loading campaign...</p>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+        </footer>
+    </div>
+    
+    <script>
+        const campaignId = window.location.pathname.split('/').pop();
+        
+        async function loadCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}`);
+                const campaign = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(campaign.detail || 'Failed to load campaign');
+                }
+                
+                const container = document.getElementById('campaign-details');
+                
+                container.innerHTML = `
+                    <div class="page-header">
+                        <div>
+                            <h2>${campaign.name}</h2>
+                            <span class="status-badge status-${campaign.status}">${campaign.status}</span>
+                            ${campaign.dry_run ? '<span class="badge">DRY RUN</span>' : ''}
+                        </div>
+                        <div class="actions">
+                            ${getActionButtons(campaign)}
+                        </div>
+                    </div>
+                    
+                    <div class="campaign-info">
+                        <p><strong>Created:</strong> ${new Date(campaign.created_at).toLocaleString()}</p>
+                        ${campaign.csv_filename ? `<p><strong>CSV:</strong> ${campaign.csv_filename}</p>` : ''}
+                    </div>
+                    
+                    ${campaign.csv_filename ? '' : renderUploadSection()}
+                    
+                    ${campaign.inferred_schema_json && Object.keys(campaign.inferred_schema_json).length > 0 ? renderSchemaSection(campaign.inferred_schema_json) : ''}
+                    
+                    ${campaign.campaign_plan_json && Object.keys(campaign.campaign_plan_json).length > 0 ? renderPlanSection(campaign.campaign_plan_json) : ''}
+                    
+                    <div id="progress-section"></div>
+                    
+                    <div id="rows-section">
+                        <h3>Recipients</h3>
+                        <p>Loading...</p>
+                    </div>
+                `;
+                
+                // Load progress if campaign is running or completed
+                if (['running', 'completed', 'paused'].includes(campaign.status)) {
+                    loadProgress();
+                }
+                
+                // Load rows
+                loadRows();
+                
+            } catch (error) {
+                document.getElementById('campaign-details').innerHTML = `
+                    <div class="error">Failed to load campaign: ${error.message}</div>
+                `;
+            }
+        }
+        
+        function getActionButtons(campaign) {
+            const buttons = [];
+            
+            if (campaign.status === 'created') {
+                if (campaign.csv_filename) {
+                    buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">Analyze</button>`);
+                }
+            }
+            
+            if (['awaiting_schema_review', 'awaiting_campaign_approval'].includes(campaign.status)) {
+                buttons.push(`<button onclick="approveCampaign()" class="btn btn-primary">Approve</button>`);
+                buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
+            }
+            
+            if (['created', 'paused'].includes(campaign.status)) {
+                buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">Run</button>`);
+            }
+            
+            if (campaign.status === 'running') {
+                buttons.push(`<button onclick="pauseCampaign()" class="btn btn-secondary">Pause</button>`);
+            }
+            
+            buttons.push(`<button onclick="exportCampaign()" class="btn btn-secondary">Export</button>`);
+            
+            return buttons.join(' ');
+        }
+        
+        function renderUploadSection() {
+            return `
+                <div class="upload-section">
+                    <h3>Upload Leads CSV</h3>
+                    <form id="upload-form" enctype="multipart/form-data">
+                        <input type="file" name="file" accept=".csv" required>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
+                </div>
+            `;
+        }
+        
+        function renderSchemaSection(schema) {
+            return `
+                <div class="schema-section">
+                    <h3>Inferred Schema</h3>
+                    <p><strong>Email Column:</strong> ${schema.primary_email_column || 'Not detected'}</p>
+                    <p><strong>Name Columns:</strong> ${schema.recipient_name_columns?.join(', ') || 'None'}</p>
+                    <p><strong>Company Columns:</strong> ${schema.company_columns?.join(', ') || 'None'}</p>
+                    <p><strong>Personalization:</strong> ${schema.personalization_columns?.slice(0, 5).join(', ') || 'None'}${schema.personalization_columns?.length > 5 ? '...' : ''}</p>
+                    <p><strong>Confidence:</strong> ${Math.round((schema.confidence || 0) * 100)}%</p>
+                    ${schema.unresolved_questions?.length ? `<p class="warning"><strong>Questions:</strong> ${schema.unresolved_questions.join(', ')}</p>` : ''}
+                </div>
+            `;
+        }
+        
+        function renderPlanSection(plan) {
+            return `
+                <div class="plan-section">
+                    <h3>Campaign Plan</h3>
+                    <p><strong>Goal:</strong> ${plan.inferred_goal}</p>
+                    <p><strong>Tone:</strong> ${plan.tone}</p>
+                    <p><strong>CTA:</strong> ${plan.cta}</p>
+                </div>
+            `;
+        }
+        
+        async function loadProgress() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/progress`);
+                const progress = await response.json();
+                
+                const section = document.getElementById('progress-section');
+                section.innerHTML = `
+                    <h3>Progress</h3>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress.percentage_complete}%"></div>
+                    </div>
+                    <p>${progress.percentage_complete}% complete</p>
+                    <p>Total: ${progress.total_rows} | Sent: ${progress.sent_count} | Failed: ${progress.failed_count} | Skipped: ${progress.skipped_count}</p>
+                `;
+            } catch (error) {
+                console.error('Failed to load progress:', error);
+            }
+        }
+        
+        async function loadRows() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/rows?page=1&page_size=10`);
+                const data = await response.json();
+                
+                const section = document.getElementById('rows-section');
+                
+                if (data.rows.length === 0) {
+                    section.innerHTML = `
+                        <h3>Recipients</h3>
+                        <p>No recipients yet. Upload a CSV to add recipients.</p>
+                    `;
+                    return;
+                }
+                
+                section.innerHTML = `
+                    <h3>Recipients (${data.total} total)</h3>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Email</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.rows.map(r => `
+                                <tr>
+                                    <td>${r.row_number}</td>
+                                    <td>${r.recipient_email || 'N/A'}</td>
+                                    <td><span class="status-badge status-${r.status}">${r.status}</span></td>
+                                    <td>
+                                        ${r.status === 'awaiting_review' ? `
+                                            <button onclick="approveRow('${r.id}')" class="btn btn-small">Approve</button>
+                                            <button onclick="rejectRow('${r.id}')" class="btn btn-small">Reject</button>
+                                        ` : '-'}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (error) {
+                document.getElementById('rows-section').innerHTML = `
+                    <h3>Recipients</h3>
+                    <p class="error">Failed to load recipients: ${error.message}</p>
+                `;
+            }
+        }
+        
+        // Action handlers
+        async function analyzeCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/analyze`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`Analysis complete! Inferred ${data.schema_inference.personalization_columns?.length || 0} personalization fields.`);
+                    location.reload();
+                } else {
+                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function approveCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/approve`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Campaign approved!');
+                    location.reload();
+                } else {
+                    alert('Approval failed: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function rejectCampaign() {
+            if (!confirm('Are you sure you want to reject this campaign?')) return;
+            
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/reject`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    location.reload();
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function runCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/run`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Failed: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function pauseCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/pause`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    location.reload();
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function exportCampaign() {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/export?format=csv`);
+                const data = await response.json();
+                
+                if (data.download_url) {
+                    alert('Export ready! Download link: ' + data.download_url);
+                }
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+        
+        async function approveRow(rowId) {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/rows/${rowId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ decision: 'approved' })
+                });
+                
+                if (response.ok) {
+                    loadRows();
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function rejectRow(rowId) {
+            try {
+                const response = await fetch(`/campaigns/${campaignId}/rows/${rowId}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ decision: 'rejected' })
+                });
+                
+                if (response.ok) {
+                    loadRows();
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // Upload form handler
+        document.addEventListener('submit', async (e) => {
+            if (e.target.id === 'upload-form') {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                
+                try {
+                    const response = await fetch(`/campaigns/${campaignId}/upload-csv`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        alert(`CSV uploaded! ${data.row_count} rows detected.`);
+                        location.reload();
+                    } else {
+                        alert('Upload failed: ' + (data.detail || 'Unknown error'));
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+        });
+        
+        // Load campaign on page load
+        loadCampaign();
+    </script>
+    
+    <style>
+        .badge {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+        
+        .upload-section {
+            background: #f9fafb;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .schema-section, .plan-section {
+            background: #eff6ff;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #2563eb;
+            transition: width 0.3s;
+        }
+    </style>
+</body>
+</html>

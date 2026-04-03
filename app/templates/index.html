@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Outreach App</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/campaigns">Campaigns</a>
+                <a href="/auth">Connect Gmail</a>
+            </nav>
+        </header>
+        
+        <main>
+            <section class="hero">
+                <h2>Personalized Email Outreach Made Simple</h2>
+                <p>Upload your CSV, generate personalized emails, and send via Gmail with full control and audit.</p>
+            </section>
+            
+            <section class="quick-start">
+                <h3>Quick Start</h3>
+                <ol>
+                    <li><a href="/auth">Connect your Gmail account</a></li>
+                    <li><a href="/campaigns/new">Create a new campaign</a></li>
+                    <li>Upload your leads CSV</li>
+                    <li>Review inferred schema and sample emails</li>
+                    <li>Approve and run (or dry-run first)</li>
+                </ol>
+            </section>
+            
+            <section class="features">
+                <h3>Features</h3>
+                <ul>
+                    <li>AI-powered CSV schema inference</li>
+                    <li>Personalized email generation</li>
+                    <li>Campaign-level approval workflow</li>
+                    <li>Row-level review for risky emails</li>
+                    <li>Dry-run mode (default)</li>
+                    <li>Idempotency to prevent duplicates</li>
+                    <li>Full audit logging</li>
+                    <li>Resumable workflows</li>
+                </ul>
+            </section>
+        </main>
+        
+        <footer>
+            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+        </footer>
+    </div>
+</body>
+</html>

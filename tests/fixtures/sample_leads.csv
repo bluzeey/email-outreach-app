@@ -1,0 +1,11 @@
+first_name,last_name,email,company,title,industry,opt_out
+John,Doe,john.doe@example.com,Acme Inc,CEO,Technology,FALSE
+Jane,Smith,jane.smith@example.com,TechCorp,CTO,Software,FALSE
+Bob,Johnson,bob.j@example.com,StartupXYZ,Founder,SaaS,FALSE
+Alice,Williams,alice.w@example.com,EnterpriseCo,VP Sales,Enterprise,FALSE
+Charlie,Brown,charlie.b@example.com,Consulting LLC,Consultant,Consulting,FALSE
+Diana,Prince,diana@example.com,Amazonia Inc,Director,E-commerce,FALSE
+Eve,Adams,eve.adams@example.com,GreenTech,Manager,CleanTech,FALSE
+Frank,Miller,frank.m@example.com,MediaGroup,Editor,Media,FALSE
+Grace,Hopper,grace@example.com,CodeAcademy,Instructor,Education,FALSE
+Henry,Ford,henry.f@example.com,AutoInnovate,Engineer,Automotive,FALSE

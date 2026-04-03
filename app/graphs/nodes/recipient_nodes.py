@@ -17,7 +17,7 @@ from app.db.models import (
     SendStatus,
 )
 from app.graphs.state import RecipientGraphState
-from app.services.csv_loader import CSVLoader
+from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
 from app.services.draft_generation_service import DraftGenerationService
 from app.services.gmail_client import GmailClient, dict_to_credentials

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.db.models import Campaign, CampaignRow, CampaignStatus, RowStatus
 from app.graphs.state import CampaignGraphState
-from app.services.csv_loader import CSVLoader
+from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
 from app.services.schema_inference_service import SchemaInferenceService
 
@@ -46,7 +46,7 @@ class CampaignGraphNodes:
         logger.info(f"Profiling CSV for campaign {state.campaign_id}")
         
         try:
-            df = CSVLoader.load_csv(state.csv_path)
+            df = DataLoader.load_file(state.csv_path)
             profile = CSVProfiler.profile_csv(df)
             
             state.csv_profile = profile.model_dump()
@@ -67,7 +67,7 @@ class CampaignGraphNodes:
         
         try:
             # Load sample rows
-            df = CSVLoader.load_csv(state.csv_path)
+            df = DataLoader.load_file(state.csv_path)
             sample_rows = CSVProfiler.get_sample_rows(df, 5)
             
             # Create profile from state
@@ -116,7 +116,7 @@ class CampaignGraphNodes:
             schema = CsvSchemaInference(**state.inferred_schema)
             
             # Load sample rows
-            df = CSVLoader.load_csv(state.csv_path)
+            df = DataLoader.load_file(state.csv_path)
             sample_rows = CSVProfiler.get_sample_rows(df, 5)
             
             # Generate plan
@@ -148,7 +148,7 @@ class CampaignGraphNodes:
             plan = CampaignPlan(**state.campaign_plan)
             
             # Load sample rows
-            df = CSVLoader.load_csv(state.csv_path)
+            df = DataLoader.load_file(state.csv_path)
             sample_rows = CSVProfiler.get_sample_rows(df, 3)
             
             # Generate drafts
@@ -188,7 +188,7 @@ class CampaignGraphNodes:
                 return state
             
             # Load CSV
-            df = CSVLoader.load_csv(state.csv_path)
+            df = DataLoader.load_file(state.csv_path)
             
             # Get schema
             from app.schemas.csv_inference import CsvSchemaInference
@@ -197,7 +197,7 @@ class CampaignGraphNodes:
             # Create rows
             row_ids = []
             for idx in range(len(df)):
-                row_data = CSVLoader.get_row_as_dict(df, idx)
+                row_data = DataLoader.get_row_as_dict(df, idx)
                 
                 # Extract email
                 recipient_email = row_data.get(schema.primary_email_column, "")

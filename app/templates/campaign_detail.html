@@ -119,9 +119,10 @@
         function renderUploadSection() {
             return `
                 <div class="upload-section">
-                    <h3>Upload Leads CSV</h3>
+                    <h3>Upload Leads File</h3>
+                    <p>Supported formats: CSV, Excel (.xls, .xlsx)</p>
                     <form id="upload-form" enctype="multipart/form-data">
-                        <input type="file" name="file" accept=".csv" required>
+                        <input type="file" name="file" accept=".csv,.xls,.xlsx,.xlsm" required>
                         <button type="submit" class="btn btn-primary">Upload</button>
                     </form>
                 </div>
@@ -353,7 +354,7 @@
                 const formData = new FormData(e.target);
                 
                 try {
-                    const response = await fetch(`/api/campaigns/${campaignId}/upload-csv`, {
+                    const response = await fetch(`/api/campaigns/${campaignId}/upload`, {
                         method: 'POST',
                         body: formData
                     });
@@ -361,7 +362,7 @@
                     const data = await response.json();
                     
                     if (response.ok) {
-                        alert(`CSV uploaded! ${data.row_count} rows detected.`);
+                        alert(`File uploaded! ${data.row_count} rows detected.`);
                         location.reload();
                     } else {
                         alert('Upload failed: ' + (data.detail || 'Unknown error'));

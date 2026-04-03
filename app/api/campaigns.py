@@ -35,7 +35,7 @@ from app.schemas.campaign import (
     CampaignUploadResponse,
 )
 from app.schemas.recipient import RecipientListResponse, RecipientRowResponse
-from app.services.csv_loader import CSVLoader
+from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
 
 logger = get_logger(__name__)
@@ -93,13 +93,13 @@ async def create_campaign(
         raise HTTPException(status_code=500, detail=f"Failed to create campaign: {str(e)}")
 
 
-@router.post("/{campaign_id}/upload-csv", response_model=CampaignUploadResponse)
-async def upload_csv(
+@router.post("/{campaign_id}/upload", response_model=CampaignUploadResponse)
+async def upload_file(
     campaign_id: str,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ):
-    """Upload CSV file for a campaign."""
+    """Upload CSV or Excel file for a campaign."""
     try:
         # Check campaign exists
         campaign = await session.get(Campaign, campaign_id)
@@ -107,17 +107,23 @@ async def upload_csv(
             raise HTTPException(status_code=404, detail="Campaign not found")
         
         # Validate file type
-        if not file.filename.endswith(".csv"):
-            raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+        if not DataLoader.is_supported_file(file.filename):
+            raise HTTPException(
+                status_code=400, 
+                detail="Only CSV and Excel files (.csv, .xls, .xlsx, .xlsm) are allowed"
+            )
+        
+        # Get file extension
+        file_ext = DataLoader.get_file_extension(file.filename)
         
         # Save file
         file_id = str(uuid.uuid4())
-        dest_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.csv")
+        dest_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.{file_ext}")
         
-        await CSVLoader.save_upload(file, dest_path)
+        await DataLoader.save_upload(file, dest_path)
         
-        # Profile CSV
-        df = CSVLoader.load_csv(dest_path)
+        # Load and profile data
+        df = DataLoader.load_file(dest_path)
         
         # Update campaign
         campaign.csv_filename = file.filename
@@ -125,7 +131,7 @@ async def upload_csv(
         campaign.status = CampaignStatus.PROFILING
         await session.commit()
         
-        logger.info(f"Uploaded CSV for campaign {campaign_id}: {len(df)} rows")
+        logger.info(f"Uploaded file for campaign {campaign_id}: {len(df)} rows")
         
         return CampaignUploadResponse(
             campaign_id=campaign_id,
@@ -136,9 +142,26 @@ async def upload_csv(
         
     except HTTPException:
         raise
+    except ImportError as e:
+        logger.error(f"Missing Excel dependencies: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Excel support not available. Please install openpyxl and xlrd."
+        )
     except Exception as e:
-        logger.error(f"Failed to upload CSV: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload CSV: {str(e)}")
+        logger.error(f"Failed to upload file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+# Keep old endpoint for backwards compatibility
+@router.post("/{campaign_id}/upload-csv", response_model=CampaignUploadResponse)
+async def upload_csv(
+    campaign_id: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Upload CSV file for a campaign (deprecated, use /upload instead)."""
+    return await upload_file(campaign_id, file, session)
 
 
 @router.post("/{campaign_id}/analyze", response_model=CampaignAnalyzeResponse)

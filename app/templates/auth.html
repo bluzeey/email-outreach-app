@@ -5,6 +5,160 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Connect Gmail - Email Outreach App</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .auth-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .auth-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .auth-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .auth-header h2 {
+            margin-bottom: 0.5rem;
+        }
+        
+        .auth-header p {
+            color: #6b7280;
+        }
+        
+        .gmail-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1.5rem;
+            background: linear-gradient(135deg, #ea4335 0%, #fbbc05 25%, #34a853 50%, #4285f4 75%);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        
+        .status-card {
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        
+        .status-card.connected {
+            background: #ecfdf5;
+            border: 2px solid #10b981;
+        }
+        
+        .status-card.disconnected {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+        }
+        
+        .status-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .btn-gmail {
+            background: linear-gradient(135deg, #ea4335 0%, #fbbc05 25%, #34a853 50%, #4285f4 75%);
+            color: white;
+            padding: 0.875rem 2rem;
+            font-size: 1.125rem;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn-gmail:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15);
+        }
+        
+        .permissions-box {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .permissions-box h4 {
+            color: #374151;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .permission-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .permission-list li {
+            padding: 0.5rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #6b7280;
+        }
+        
+        .permission-list li.allowed {
+            color: #059669;
+        }
+        
+        .permission-list li.denied {
+            color: #dc2626;
+            text-decoration: line-through;
+        }
+        
+        .check-icon { color: #10b981; }
+        .cross-icon { color: #ef4444; }
+        
+        .email-display {
+            background: white;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            font-weight: 600;
+            color: #1f2937;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .actions-centered {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e5e7eb;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -17,30 +171,54 @@
             </nav>
         </header>
         
-        <main>
-            <h2>Connect Gmail Account</h2>
-            
-            <div id="auth-status" class="status-box">
-                <p>Checking connection status...</p>
-            </div>
-            
-            <div id="auth-actions" class="actions" style="display: none;">
-                <a id="connect-btn" href="/auth/google/start" class="btn btn-primary">Connect Gmail</a>
-                <button id="disconnect-btn" class="btn btn-secondary" style="display: none;">Disconnect</button>
-            </div>
-            
-            <div class="info">
-                <h3>Required Permissions</h3>
-                <p>This app requires only minimal Gmail permissions:</p>
-                <ul>
-                    <li><strong>Send emails only</strong> - We can only send emails on your behalf</li>
-                </ul>
-                <p>We do NOT request permissions to:</p>
-                <ul>
-                    <li>Read your inbox</li>
-                    <li>Access your contacts</li>
-                    <li>Modify or delete emails</li>
-                </ul>
+        <main class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="gmail-icon">G</div>
+                    <h2>Connect Gmail Account</h2>
+                    <p>Send personalized emails directly from your Gmail account</p>
+                </div>
+                
+                <div id="auth-status" class="status-card disconnected">
+                    <div class="loading-spinner"></div>
+                    <p>Checking connection status...</p>
+                </div>
+                
+                <div id="auth-actions" class="actions-centered" style="display: none;">
+                    <a id="connect-btn" href="/auth/google/start" class="btn btn-gmail">
+                        <span>Connect with Google</span>
+                    </a>
+                    <button id="disconnect-btn" class="btn btn-secondary" style="display: none;">
+                        Disconnect Account
+                    </button>
+                </div>
+                
+                <div class="permissions-box">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        Permissions Required
+                    </h4>
+                    <ul class="permission-list">
+                        <li class="allowed">
+                            <span class="check-icon">✓</span>
+                            <strong>Send emails only</strong> - Send emails on your behalf
+                        </li>
+                        <li class="denied">
+                            <span class="cross-icon">✗</span>
+                            Read your inbox (not requested)
+                        </li>
+                        <li class="denied">
+                            <span class="cross-icon">✗</span>
+                            Access your contacts (not requested)
+                        </li>
+                        <li class="denied">
+                            <span class="cross-icon">✗</span>
+                            Modify or delete emails (not requested)
+                        </li>
+                    </ul>
+                </div>
             </div>
         </main>
         
@@ -56,30 +234,31 @@
                 const response = await fetch('/auth/status');
                 const data = await response.json();
                 
-                const statusBox = document.getElementById('auth-status');
+                const statusCard = document.getElementById('auth-status');
                 const actions = document.getElementById('auth-actions');
                 const connectBtn = document.getElementById('connect-btn');
                 const disconnectBtn = document.getElementById('disconnect-btn');
                 
-                actions.style.display = 'block';
+                actions.style.display = 'flex';
                 
                 if (data.connected) {
-                    statusBox.innerHTML = `
-                        <div class="success">
-                            <strong>Connected!</strong><br>
-                            Email: ${data.account.email}<br>
-                            Connected at: ${new Date(data.account.connected_at).toLocaleString()}
-                        </div>
+                    statusCard.className = 'status-card connected';
+                    statusCard.innerHTML = `
+                        <div class="status-icon">✓</div>
+                        <h3>Connected!</h3>
+                        <div class="email-display">${data.account.email}</div>
+                        <p>Connected on ${new Date(data.account.connected_at).toLocaleDateString()}</p>
                     `;
                     connectBtn.style.display = 'none';
                     disconnectBtn.style.display = 'inline-block';
                 } else {
-                    statusBox.innerHTML = `
-                        <div class="warning">
-                            No Gmail account connected. Please connect to start sending emails.
-                        </div>
+                    statusCard.className = 'status-card disconnected';
+                    statusCard.innerHTML = `
+                        <div class="status-icon">!</div>
+                        <h3>Not Connected</h3>
+                        <p>Connect your Gmail account to start sending personalized emails</p>
                     `;
-                    connectBtn.style.display = 'inline-block';
+                    connectBtn.style.display = 'inline-flex';
                     disconnectBtn.style.display = 'none';
                 }
             } catch (error) {
@@ -91,12 +270,13 @@
         
         // Handle disconnect
         document.getElementById('disconnect-btn')?.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to disconnect your Gmail account?')) return;
+            
             try {
                 const response = await fetch('/auth/google/disconnect', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert('Account disconnected');
                     location.reload();
                 } else {
                     alert('Failed to disconnect');

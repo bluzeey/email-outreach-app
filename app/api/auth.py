@@ -34,12 +34,12 @@ async def get_session():
             await session.close()
 
 
-@router.get("/google/start", response_model=AuthUrlResponse)
+@router.get("/google/start")
 async def start_google_auth():
-    """Start Google OAuth flow."""
+    """Start Google OAuth flow - redirects to Google."""
     try:
         auth_url, state = get_authorization_url()
-        return AuthUrlResponse(auth_url=auth_url, state=state)
+        return RedirectResponse(url=auth_url)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

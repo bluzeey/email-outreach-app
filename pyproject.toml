@@ -15,6 +15,7 @@ dependencies = [
     "aiosqlite>=0.19.0",
     "asyncpg>=0.29.0",
     "langgraph>=0.0.50",
+    "langgraph-checkpoint-sqlite>=3.0.0",
     "langchain>=0.1.0",
     "langchain-openai>=0.0.5",
     "pydantic>=2.5.0",

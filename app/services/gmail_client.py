@@ -15,8 +15,12 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Gmail API scopes - minimal send-only scope
-GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+# Gmail API scopes - minimal scopes for sending and getting user email
+GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
 
 # In-memory storage for OAuth flows (keyed by state)
 # Note: This only works for single-user apps. For multi-user, use Redis/DB

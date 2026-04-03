@@ -57,7 +57,8 @@
                     
                     <div class="campaign-info">
                         <p><strong>Created:</strong> ${new Date(campaign.created_at).toLocaleString()}</p>
-                        ${campaign.csv_filename ? `<p><strong>CSV:</strong> ${campaign.csv_filename}</p>` : ''}
+                        ${campaign.csv_filename ? `<p><strong>File:</strong> ${campaign.csv_filename}</p>` : ''}
+                        ${campaign.context ? `<p><strong>Context:</strong> ${campaign.context}</p>` : ''}
                     </div>
                     
                     ${campaign.csv_filename ? '' : renderUploadSection()}

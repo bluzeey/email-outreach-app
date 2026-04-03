@@ -1,5 +1,6 @@
 """Authentication API endpoints."""
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from app.schemas.auth import (
 from app.services.gmail_client import (
     get_authorization_url,
     exchange_code_for_credentials,
+    dict_to_credentials,
+    build_gmail_service,
 )
 
 logger = get_logger(__name__)

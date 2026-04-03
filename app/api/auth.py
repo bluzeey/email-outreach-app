@@ -57,7 +57,7 @@ async def google_auth_callback(
     """Handle Google OAuth callback."""
     try:
         # Exchange code for credentials
-        credentials = exchange_code_for_credentials(code)
+        credentials = exchange_code_for_credentials(code, state)
         
         # Get profile info
         from app.services.gmail_client import dict_to_credentials, build_gmail_service

@@ -18,6 +18,10 @@ logger = get_logger(__name__)
 # Gmail API scopes - minimal send-only scope
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
+# In-memory storage for OAuth flows (keyed by state)
+# Note: This only works for single-user apps. For multi-user, use Redis/DB
+_oauth_flows = {}
+
 
 def get_client_config() -> dict:
     """Build OAuth client configuration from settings."""
@@ -57,12 +61,22 @@ def get_authorization_url() -> tuple[str, str]:
         include_granted_scopes="true",
         prompt="consent",
     )
+    
+    # Store the flow instance by state for later retrieval
+    _oauth_flows[state] = flow
+    
     return auth_url, state
 
 
-def exchange_code_for_credentials(code: str) -> dict:
+def exchange_code_for_credentials(code: str, state: str) -> dict:
     """Exchange authorization code for credentials."""
-    flow = create_auth_flow()
+    # Retrieve the flow instance from storage
+    flow = _oauth_flows.pop(state, None)
+    if not flow:
+        raise ValueError(
+            "OAuth flow not found or expired. Please restart the authentication process."
+        )
+    
     flow.fetch_token(code=code)
 
     credentials = flow.credentials

@@ -11,22 +11,22 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/auth", response_class=HTMLResponse)
 async def auth_page(request: Request):
     """Auth page."""
-    return templates.TemplateResponse("auth.html", {"request": request})
+    return templates.TemplateResponse(request, "auth.html", {})
 
 
 @router.get("/campaigns", response_class=HTMLResponse)
 async def campaigns_page(request: Request):
     """Campaigns list page."""
-    return templates.TemplateResponse("campaigns.html", {"request": request})
+    return templates.TemplateResponse(request, "campaigns.html", {})
 
 
 @router.get("/campaigns/new", response_class=HTMLResponse)
 async def new_campaign_page(request: Request):
     """New campaign page."""
-    return templates.TemplateResponse("campaign_new.html", {"request": request})
+    return templates.TemplateResponse(request, "campaign_new.html", {})
 
 
 @router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
 async def campaign_detail_page(request: Request, campaign_id: str):
     """Campaign detail page."""
-    return templates.TemplateResponse("campaign_detail.html", {"request": request, "campaign_id": campaign_id})
+    return templates.TemplateResponse(request, "campaign_detail.html", {"campaign_id": campaign_id})

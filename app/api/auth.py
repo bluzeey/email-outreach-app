@@ -62,13 +62,18 @@ async def google_auth_callback(
         # Exchange code for credentials
         credentials = exchange_code_for_credentials(code, state)
         
-        # Get profile info
-        from app.services.gmail_client import dict_to_credentials, build_gmail_service
+        # Get user email using OAuth2 userinfo API (requires userinfo.email scope)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {credentials['token']}"}
+            )
+            response.raise_for_status()
+            userinfo = response.json()
+            email = userinfo.get("email")
         
-        creds = dict_to_credentials(credentials)
-        service = build_gmail_service(creds)
-        profile = service.users().getProfile(userId="me").execute()
-        email = profile.get("emailAddress")
+        if not email:
+            raise ValueError("Could not retrieve email from userinfo")
         
         # Check if account exists
         result = await session.execute(

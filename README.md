@@ -78,10 +78,12 @@ Or follow these detailed steps:
    - User support email: **your email**
    - Developer contact information: **your email**
    - Click **"Save and Continue"**
-4. **IMPORTANT - Add Scopes**:
+4. **IMPORTANT - Add ALL Required Scopes**:
    - Click **"Add or Remove Scopes"**
-   - In the filter box, type: `gmail.send`
-   - Check the box for: `https://www.googleapis.com/auth/gmail.send`
+   - Search for and check these 3 scopes:
+     - `https://www.googleapis.com/auth/gmail.send` - Send emails
+     - `openid` - Get user identity
+     - `https://www.googleapis.com/auth/userinfo.email` - Get user email
    - Click **"Update"**
    - Click **"Save and Continue"**
 5. Skip the "Test users" step for now (you can add yourself later if needed)
@@ -250,6 +252,8 @@ pytest tests/unit/test_csv_loader.py -v
 
 This app uses **minimal** Gmail scopes:
 - `https://www.googleapis.com/auth/gmail.send` - Send emails only
+- `openid` - Authenticate your identity
+- `https://www.googleapis.com/auth/userinfo.email` - Get your email address
 
 **We do NOT access**:
 - ❌ Your inbox (reading emails)

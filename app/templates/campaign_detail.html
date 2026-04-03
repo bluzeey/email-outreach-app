@@ -92,7 +92,7 @@
         function getActionButtons(campaign) {
             const buttons = [];
             
-            if (campaign.status === 'created') {
+            if (['created', 'profiling'].includes(campaign.status)) {
                 if (campaign.csv_filename) {
                     buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">Analyze</button>`);
                 }

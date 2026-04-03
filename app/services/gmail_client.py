@@ -1,10 +1,8 @@
 """Gmail client service."""
 
 import base64
-import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -14,7 +12,6 @@ from googleapiclient.errors import HttpError
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.security import decrypt_token, encrypt_token
 
 logger = get_logger(__name__)
 
@@ -22,18 +19,30 @@ logger = get_logger(__name__)
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 
+def get_client_config() -> dict:
+    """Build OAuth client configuration from settings."""
+    return {
+        "web": {
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [settings.GOOGLE_REDIRECT_URI],
+        }
+    }
+
+
 def create_auth_flow() -> Flow:
     """Create OAuth flow for Gmail authentication."""
-    client_secrets_path = settings.GOOGLE_CLIENT_SECRETS_PATH
-    
-    if not os.path.exists(client_secrets_path):
-        raise FileNotFoundError(
-            f"Client secrets file not found: {client_secrets_path}. "
-            "Please download from Google Cloud Console."
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise ValueError(
+            "Google OAuth credentials not configured. "
+            "Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file."
         )
-    
-    flow = Flow.from_client_secrets_file(
-        client_secrets_path,
+
+    client_config = get_client_config()
+    flow = Flow.from_client_config(
+        client_config,
         scopes=GMAIL_SCOPES,
         redirect_uri=settings.GOOGLE_REDIRECT_URI,
     )
@@ -55,9 +64,9 @@ def exchange_code_for_credentials(code: str) -> dict:
     """Exchange authorization code for credentials."""
     flow = create_auth_flow()
     flow.fetch_token(code=code)
-    
+
     credentials = flow.credentials
-    
+
     return {
         "token": credentials.token,
         "refresh_token": credentials.refresh_token,
@@ -118,15 +127,15 @@ def create_mime_message(
     msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = to
-    
+
     # Add plain text part
     part1 = MIMEText(plain_text, "plain")
     msg.attach(part1)
-    
+
     # Add HTML part
     part2 = MIMEText(html_body, "html")
     msg.attach(part2)
-    
+
     return msg
 
 
@@ -138,19 +147,19 @@ def encode_message(msg: MIMEMultipart) -> dict:
 
 class GmailClient:
     """Gmail client for sending emails."""
-    
+
     def __init__(self, credentials_dict: dict):
         self.credentials_dict = credentials_dict
         self.credentials = dict_to_credentials(credentials_dict)
         self.service = None
-    
+
     def _get_service(self):
         """Get or create Gmail service."""
         if self.service is None:
             self.credentials = refresh_credentials_if_needed(self.credentials)
             self.service = build_gmail_service(self.credentials)
         return self.service
-    
+
     def send_email(
         self,
         sender: str,
@@ -162,10 +171,10 @@ class GmailClient:
         """Send email via Gmail API."""
         try:
             service = self._get_service()
-            
+
             # Create MIME message
             msg = create_mime_message(sender, to, subject, plain_text, html_body)
-            
+
             # Encode and send
             encoded_msg = encode_message(msg)
             result = (
@@ -174,14 +183,14 @@ class GmailClient:
                 .send(userId="me", body=encoded_msg)
                 .execute()
             )
-            
+
             logger.info(
                 "Email sent successfully",
                 message_id=result.get("id"),
                 recipient=to,
                 subject=subject,
             )
-            
+
             return {
                 "success": True,
                 "message_id": result.get("id"),
@@ -189,7 +198,7 @@ class GmailClient:
                 "label_ids": result.get("labelIds", []),
                 "raw_response": result,
             }
-            
+
         except HttpError as e:
             logger.error(
                 "Gmail API error",
@@ -205,7 +214,7 @@ class GmailClient:
                 recipient=to,
             )
             raise
-    
+
     def get_profile(self) -> dict:
         """Get Gmail profile."""
         service = self._get_service()

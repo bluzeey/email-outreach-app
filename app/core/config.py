@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
-    GOOGLE_CLIENT_SECRETS_PATH: str = "./client_secrets.json"
     
     # LLM Configuration
     OPENAI_API_KEY: str = ""

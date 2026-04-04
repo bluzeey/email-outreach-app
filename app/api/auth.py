@@ -71,6 +71,7 @@ async def google_auth_callback(
             response.raise_for_status()
             userinfo = response.json()
             email = userinfo.get("email")
+            sender_name = userinfo.get("name")  # Full name from Google
         
         if not email:
             raise ValueError("Could not retrieve email from userinfo")
@@ -85,12 +86,14 @@ async def google_auth_callback(
             # Update existing
             existing.token_encrypted = encrypt_token(credentials["token"])
             existing.refresh_token_encrypted = encrypt_token(credentials["refresh_token"]) if credentials.get("refresh_token") else None
+            existing.sender_name = sender_name  # Update name in case it changed
             existing.status = "active"
             account = existing
         else:
             # Create new
             account = GmailAccount(
                 email=email,
+                sender_name=sender_name,
                 scopes=credentials["scopes"],
                 token_encrypted=encrypt_token(credentials["token"]),
                 refresh_token_encrypted=encrypt_token(credentials["refresh_token"]) if credentials.get("refresh_token") else None,
@@ -151,6 +154,7 @@ async def get_auth_status(
                 account=GmailAccountResponse(
                     id=account.id,
                     email=account.email,
+                    sender_name=account.sender_name,
                     status=account.status,
                     connected_at=account.connected_at.isoformat() if account.connected_at else "",
                     scopes=account.scopes or [],

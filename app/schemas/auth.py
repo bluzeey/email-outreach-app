@@ -10,6 +10,7 @@ class GmailAccountResponse(BaseModel):
     
     id: str
     email: str
+    sender_name: str | None = None
     status: str
     connected_at: str
     scopes: list[str]

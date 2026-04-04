@@ -29,6 +29,7 @@ class DraftGenerationService:
         schema: CsvSchemaInference,
         campaign_plan: CampaignPlan,
         row_data: dict,
+        sender_name: str | None = None,
     ) -> GeneratedEmail:
         """Generate personalized email draft for a single row."""
         
@@ -46,7 +47,7 @@ class DraftGenerationService:
         if self.llm_client:
             try:
                 draft = await self._generate_with_llm(
-                    schema, campaign_plan, row_data, personalization_context, recipient_email
+                    schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name
                 )
                 if draft:
                     return draft
@@ -55,7 +56,7 @@ class DraftGenerationService:
         
         # Fallback to template-based generation
         return self._generate_with_template(
-            schema, campaign_plan, row_data, personalization_context, recipient_email
+            schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name
         )
     
     def _build_personalization_context(
@@ -97,6 +98,7 @@ class DraftGenerationService:
         row_data: dict,
         personalization_context: dict,
         recipient_email: str | None = None,
+        sender_name: str | None = None,
     ) -> GeneratedEmail | None:
         """Generate email using LLM."""
         if not self.llm_client:
@@ -113,9 +115,20 @@ class DraftGenerationService:
 
 """
         
+        # Include sender information
+        sender_section = ""
+        sign_off_instruction = ""
+        if sender_name:
+            sender_section = f"""Sender: {sender_name}
+
+"""
+            sign_off_instruction = f'- Sign off with "Kind regards," followed by "{sender_name}" on a new line'
+        else:
+            sign_off_instruction = '- Sign off with "Kind regards"'
+        
         prompt = f"""You are an expert at writing personalized cold outreach emails.
 
-{campaign_context_section}Campaign Goal: {campaign_plan.inferred_goal}
+{sender_section}{campaign_context_section}Campaign Goal: {campaign_plan.inferred_goal}
 Tone: {campaign_plan.tone}
 Style Constraints:
 {chr(10).join([f"- {c}" for c in campaign_plan.style_constraints])}
@@ -140,6 +153,7 @@ Requirements:
 - Use natural, conversational language
 - Include the call-to-action naturally
 - No generic templates like "I hope this email finds you well"
+{sign_off_instruction}
 
 Respond with ONLY valid JSON:
 {{
@@ -199,6 +213,7 @@ Respond with ONLY valid JSON:
         row_data: dict,
         personalization_context: dict,
         recipient_email: str | None = None,
+        sender_name: str | None = None,
     ) -> GeneratedEmail:
         """Generate email using templates (fallback)."""
         
@@ -217,6 +232,11 @@ Respond with ONLY valid JSON:
         else:
             subject = "Quick question"
         
+        # Build sign-off
+        sign_off = "Kind regards"
+        if sender_name:
+            sign_off = f"Kind regards,\n{sender_name}"
+        
         # Generate body
         plain_body = f"""Hi {first_name},
 
@@ -226,7 +246,7 @@ I came across {company} and wanted to reach out.{context_intro}
 
 {campaign_plan.cta}.
 
-Best regards"""
+{sign_off}"""
         
         # Simple HTML conversion
         html_body = f"<p>Hi {first_name},</p>\n\n"
@@ -235,7 +255,10 @@ Best regards"""
             html_body += f"<p>{campaign_plan.context}</p>\n\n"
         html_body += f"<p>{campaign_plan.inferred_goal}</p>\n\n"
         html_body += f"<p>{campaign_plan.cta}.</p>\n\n"
-        html_body += "<p>Best regards</p>"
+        if sender_name:
+            html_body += f"<p>Kind regards,<br>{sender_name}</p>"
+        else:
+            html_body += "<p>Kind regards</p>"
         
         return GeneratedEmail(
             to=recipient_email,
@@ -255,13 +278,14 @@ Best regards"""
         campaign_plan: CampaignPlan,
         sample_rows: list[dict],
         count: int = 3,
+        sender_name: str | None = None,
     ) -> list[GeneratedEmail]:
         """Generate sample drafts for review."""
         drafts = []
         
         for row in sample_rows[:count]:
             try:
-                draft = await self.generate_draft(schema, campaign_plan, row)
+                draft = await self.generate_draft(schema, campaign_plan, row, sender_name)
                 drafts.append(draft)
             except Exception as e:
                 logger.error(f"Failed to generate sample draft: {e}")

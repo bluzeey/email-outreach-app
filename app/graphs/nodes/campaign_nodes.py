@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import CampaignRow, RowStatus
+from app.db.models import CampaignRow, GmailAccount, RowStatus
 from app.graphs.state import CampaignGraphState
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
@@ -189,6 +189,7 @@ class CampaignGraphNodes:
         try:
             from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
             from app.services.draft_generation_service import DraftGenerationService
+            from sqlalchemy import select
             
             schema = CsvSchemaInference(**state.inferred_schema)
             plan = CampaignPlan(**state.campaign_plan)
@@ -198,13 +199,29 @@ class CampaignGraphNodes:
                 plan.context = state.context
                 logger.debug(f"Added context to plan for sample drafts: {plan.context[:50]}...")
             
+            # Get sender name from Gmail account if available
+            sender_name = None
+            try:
+                from app.db.models import Campaign
+                campaign_result = await self.session.execute(
+                    select(Campaign).where(Campaign.id == state.campaign_id)
+                )
+                campaign = campaign_result.scalar_one_or_none()
+                if campaign and campaign.gmail_account_id:
+                    gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
+                    if gmail_account:
+                        sender_name = gmail_account.sender_name
+                        logger.debug(f"Using sender name: {sender_name}")
+            except Exception as e:
+                logger.warning(f"Could not fetch sender name: {e}")
+            
             # Load sample rows
             df = DataLoader.load_file(state.csv_path)
             sample_rows = CSVProfiler.get_sample_rows(df, 3)
             
-            # Generate drafts
+            # Generate drafts with sender name
             draft_service = DraftGenerationService()
-            drafts = await draft_service.generate_sample_drafts(schema, plan, sample_rows, 3)
+            drafts = await draft_service.generate_sample_drafts(schema, plan, sample_rows, 3, sender_name)
             
             state.sample_drafts = [d.model_dump() for d in drafts]
             logger.info(f"Generated {len(drafts)} sample drafts")

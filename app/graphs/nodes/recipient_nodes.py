@@ -194,9 +194,17 @@ class RecipientGraphNodes:
             schema = CsvSchemaInference(**campaign.inferred_schema_json)
             plan = CampaignPlan(**campaign.campaign_plan_json)
             
-            # Generate draft
+            # Get sender name from Gmail account if available
+            sender_name = None
+            if campaign.gmail_account_id:
+                gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
+                if gmail_account:
+                    sender_name = gmail_account.sender_name
+                    logger.debug(f"Using sender name for recipient draft: {sender_name}")
+            
+            # Generate draft with sender name
             draft = await self.draft_service.generate_draft(
-                schema, plan, state.normalized_row or {}
+                schema, plan, state.normalized_row or {}, sender_name
             )
             
             state.generated_email = draft.model_dump()

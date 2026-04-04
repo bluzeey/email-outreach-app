@@ -66,6 +66,7 @@ class GmailAccount(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String, nullable=False, unique=True)
+    sender_name = Column(String, nullable=True)  # Full name from Google OAuth
     provider = Column(String, default="google")
     scopes = Column(JSON, default=list)
     token_encrypted = Column(Text, nullable=True)

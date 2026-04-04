@@ -102,7 +102,7 @@
             }
             
             if (['awaiting_schema_review', 'awaiting_campaign_approval'].includes(campaign.status)) {
-                buttons.push(`<button onclick="approveCampaign()" class="btn btn-primary">Approve</button>`);
+                buttons.push(`<button onclick="startSending()" class="btn btn-primary">📧 Start Sending</button>`);
                 buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
             }
             
@@ -241,10 +241,11 @@
                                     <td>${r.recipient_email || 'N/A'}</td>
                                     <td><span class="status-badge status-${r.status}">${r.status}</span></td>
                                     <td>
+                                        <button onclick="previewDraft('${r.id}')" class="btn btn-small btn-icon" title="Preview Email">👁️</button>
                                         ${r.status === 'awaiting_review' ? `
                                             <button onclick="approveRow('${r.id}')" class="btn btn-small">Approve</button>
                                             <button onclick="rejectRow('${r.id}')" class="btn btn-small">Reject</button>
-                                        ` : '-'}
+                                        ` : ''}
                                     </td>
                                 </tr>
                             `).join('')}
@@ -282,7 +283,7 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert('Campaign approved!');
+                    alert('Campaign approved! Starting to send emails...');
                     location.reload();
                 } else {
                     alert('Approval failed: ' + data.message);
@@ -290,6 +291,11 @@
             } catch (error) {
                 alert('Error: ' + error.message);
             }
+        }
+        
+        async function startSending() {
+            // startSending is the same as approveCampaign - just a clearer name
+            await approveCampaign();
         }
         
         async function rejectCampaign() {
@@ -378,6 +384,67 @@
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+            }
+        }
+        
+        async function previewDraft(rowId) {
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${rowId}/draft`);
+                const draft = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(draft.detail || 'Failed to load draft');
+                }
+                
+                // Create modal content
+                const modalHtml = `
+                    <div id="draft-modal" class="modal">
+                        <div class="modal-content">
+                            <span class="close" onclick="closeModal()">&times;</span>
+                            <h3>📧 Email Preview</h3>
+                            <div class="draft-preview">
+                                <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
+                                <p><strong>Subject:</strong> ${draft.subject}</p>
+                                <hr>
+                                <div class="email-body">
+                                    <pre>${draft.plain_text_body}</pre>
+                                </div>
+                                ${draft.needs_human_review ? `<p class="warning">⚠️ ${draft.review_reasons?.join(', ') || 'Needs review'}</p>` : ''}
+                                <p class="confidence">Confidence: ${draft.generation_confidence}%</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Remove existing modal if any
+                const existingModal = document.getElementById('draft-modal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
+                // Add modal to page
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                
+                // Show modal
+                document.getElementById('draft-modal').style.display = 'block';
+                
+            } catch (error) {
+                alert('Failed to load draft: ' + error.message);
+            }
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('draft-modal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('draft-modal');
+            if (event.target === modal) {
+                closeModal();
             }
         }
         
@@ -521,6 +588,74 @@
             height: 100%;
             background: #2563eb;
             transition: width 0.3s;
+        }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 700px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: #000;
+        }
+        
+        .draft-preview {
+            margin-top: 1rem;
+        }
+        
+        .draft-preview .email-body pre {
+            background: #f9fafb;
+            padding: 1rem;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: inherit;
+            line-height: 1.6;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .btn-icon {
+            padding: 0.25rem 0.5rem;
+            font-size: 1rem;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .btn-icon:hover {
+            background: #f3f4f6;
+            border-radius: 4px;
+        }
+        
+        .confidence {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-top: 1rem;
         }
     </style>
 </body>

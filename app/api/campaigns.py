@@ -34,7 +34,11 @@ from app.schemas.campaign import (
     CampaignResponse,
     CampaignUploadResponse,
 )
-from app.schemas.recipient import RecipientListResponse, RecipientRowResponse
+from app.schemas.recipient import (
+    EmailDraftResponse,
+    RecipientListResponse,
+    RecipientRowResponse,
+)
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
 
@@ -237,26 +241,28 @@ async def approve_campaign(
         
         logger.info(f"Campaign {campaign_id} approved, starting recipient processing")
         
-        # Get all pending recipient rows and process them
+        # Get all rows with generated drafts and send them
         result = await session.execute(
             select(CampaignRow).where(
                 CampaignRow.campaign_id == campaign_id,
-                CampaignRow.status.in_([RowStatus.QUEUED, RowStatus.NORMALIZED])
+                CampaignRow.status.in_([RowStatus.GENERATED, RowStatus.QUEUED, RowStatus.NORMALIZED])
             )
         )
         pending_rows = result.scalars().all()
         
-        logger.info(f"Found {len(pending_rows)} pending rows to process")
+        logger.info(f"Found {len(pending_rows)} rows with drafts ready to send")
         
-        # Process each row (generate drafts and send)
+        # Send each email (drafts are already generated)
         processed = 0
         failed = 0
         for row in pending_rows:
             try:
-                await _process_recipient_row(session, campaign, row)
+                await _send_recipient_email(session, campaign, row)
                 processed += 1
+                if row.status == RowStatus.FAILED:
+                    failed += 1
             except Exception as e:
-                logger.error(f"Failed to process row {row.id}: {e}")
+                logger.error(f"Failed to send email to row {row.id}: {e}")
                 row.status = RowStatus.FAILED
                 row.error_message = str(e)
                 failed += 1
@@ -415,6 +421,118 @@ async def _process_recipient_row(session: AsyncSession, campaign: Campaign, row:
     # Update row status
     row.status = RowStatus(result.get("status", "failed"))
     await session.flush()
+
+
+async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: CampaignRow):
+    """Send email for a recipient using existing draft."""
+    from app.db.models import EmailDraft, GmailAccount, SendEvent, SendStatus
+    from app.services.gmail_client import GmailClient
+    from app.services.idempotency_service import IdempotencyService
+    from app.core.security import decrypt_token, generate_idempotency_key
+    import json
+    
+    # Get the draft
+    result = await session.execute(
+        select(EmailDraft).where(EmailDraft.campaign_row_id == row.id)
+    )
+    draft = result.scalar_one_or_none()
+    
+    if not draft:
+        row.status = RowStatus.FAILED
+        row.error_message = "No email draft found"
+        await session.flush()
+        return
+    
+    # Get Gmail account
+    if not campaign.gmail_account_id:
+        row.status = RowStatus.FAILED
+        row.error_message = "No Gmail account connected"
+        await session.flush()
+        return
+    
+    gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
+    if not gmail_account:
+        row.status = RowStatus.FAILED
+        row.error_message = "Gmail account not found"
+        await session.flush()
+        return
+    
+    # Check idempotency
+    idempotency_service = IdempotencyService()
+    
+    existing = await idempotency_service.check_duplicate(
+        session, campaign.id,
+        row.recipient_email or "",
+        draft.subject, draft.plain_text_body
+    )
+    
+    if existing and existing.status == SendStatus.SENT:
+        row.status = RowStatus.SENT
+        await session.flush()
+        return
+    
+    # Check dry-run
+    if campaign.dry_run:
+        await idempotency_service.record_send_attempt(
+            session=session,
+            campaign_row_id=row.id,
+            campaign_id=campaign.id,
+            recipient_email=row.recipient_email or "",
+            subject=draft.subject,
+            body=draft.plain_text_body,
+            status=SendStatus.DRY_RUN,
+            provider_response={"dry_run": True},
+        )
+        row.status = RowStatus.SENT
+        await session.flush()
+        return
+    
+    # Actually send
+    try:
+        token_data = json.loads(decrypt_token(gmail_account.token_encrypted))
+        client = GmailClient(token_data)
+        
+        result = client.send_email(
+            sender=gmail_account.email,
+            to=row.recipient_email or "",
+            subject=draft.subject,
+            plain_text=draft.plain_text_body,
+            html_body=draft.html_body,
+        )
+        
+        await idempotency_service.record_send_attempt(
+            session=session,
+            campaign_row_id=row.id,
+            campaign_id=campaign.id,
+            recipient_email=row.recipient_email or "",
+            subject=draft.subject,
+            body=draft.plain_text_body,
+            status=SendStatus.SENT,
+            provider_response=result,
+        )
+        
+        row.status = RowStatus.SENT
+        await session.flush()
+        
+        logger.info(f"Email sent to {row.recipient_email}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        
+        await idempotency_service.record_send_attempt(
+            session=session,
+            campaign_row_id=row.id,
+            campaign_id=campaign.id,
+            recipient_email=row.recipient_email or "",
+            subject=draft.subject,
+            body=draft.plain_text_body,
+            status=SendStatus.FAILED,
+            error_message=str(e),
+        )
+        
+        row.status = RowStatus.FAILED
+        row.error_message = str(e)
+        await session.flush()
 
 
 @router.post("/{campaign_id}/pause", response_model=CampaignActionResponse)
@@ -584,6 +702,57 @@ async def get_campaign_rows(
     except Exception as e:
         logger.error(f"Failed to get campaign rows: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get rows: {str(e)}")
+
+
+@router.get("/{campaign_id}/rows/{row_id}/draft", response_model=EmailDraftResponse)
+async def get_recipient_draft(
+    campaign_id: str,
+    row_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Get email draft for a specific recipient."""
+    try:
+        # Verify campaign exists
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Get the row
+        row = await session.get(CampaignRow, row_id)
+        if not row or row.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+        
+        # Get the draft
+        from sqlalchemy import select
+        from app.db.models import EmailDraft
+        
+        result = await session.execute(
+            select(EmailDraft).where(EmailDraft.campaign_row_id == row_id)
+        )
+        draft = result.scalar_one_or_none()
+        
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found for this recipient")
+        
+        return EmailDraftResponse(
+            id=draft.id,
+            campaign_row_id=draft.campaign_row_id,
+            subject=draft.subject,
+            plain_text_body=draft.plain_text_body,
+            html_body=draft.html_body,
+            personalization_fields_used=draft.personalization_fields_used or [],
+            key_claims_used=draft.key_claims_used or [],
+            generation_confidence=draft.generation_confidence,
+            needs_human_review=draft.needs_human_review,
+            review_reasons=draft.review_reasons or [],
+            created_at=draft.created_at.isoformat() if draft.created_at else None,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get draft: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get draft: {str(e)}")
 
 
 @router.get("/{campaign_id}/export", response_model=CampaignExportResponse)

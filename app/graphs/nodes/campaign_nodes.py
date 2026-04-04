@@ -3,6 +3,7 @@
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import Campaign, CampaignRow, CampaignStatus, RowStatus
 from app.graphs.state import CampaignGraphState
@@ -200,7 +201,7 @@ class CampaignGraphNodes:
         return state
     
     async def prepare_recipient_records(self, state: CampaignGraphState) -> CampaignGraphState:
-        """Create recipient records from CSV."""
+        """Create recipient records from CSV and generate email drafts for preview."""
         logger.info(f"Preparing recipient records for {state.campaign_id}")
         
         try:
@@ -212,13 +213,19 @@ class CampaignGraphNodes:
             # Load CSV
             df = DataLoader.load_file(state.csv_path)
             
-            # Get schema
-            from app.schemas.csv_inference import CsvSchemaInference
+            # Get schema and plan
+            from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
+            from app.services.draft_generation_service import DraftGenerationService
+            
             schema = CsvSchemaInference(**state.inferred_schema)
+            plan = CampaignPlan(**state.campaign_plan)
+            draft_service = DraftGenerationService()
             
             # Create rows - skip rows without valid email
             row_ids = []
             skipped_count = 0
+            draft_errors = 0
+            
             for idx in range(len(df)):
                 row_data = DataLoader.get_row_as_dict(df, idx)
                 
@@ -232,6 +239,7 @@ class CampaignGraphNodes:
                     skipped_count += 1
                     continue
                 
+                # Create recipient record
                 campaign_row = CampaignRow(
                     campaign_id=state.campaign_id,
                     row_number=idx + 1,
@@ -243,6 +251,36 @@ class CampaignGraphNodes:
                 self.session.add(campaign_row)
                 await self.session.flush()
                 row_ids.append(campaign_row.id)
+                
+                # Generate email draft for preview
+                try:
+                    draft = await draft_service.generate_draft(schema, plan, row_data)
+                    
+                    # Save draft to DB
+                    email_draft = EmailDraft(
+                        campaign_row_id=campaign_row.id,
+                        subject=draft.subject,
+                        plain_text_body=draft.plain_text_body,
+                        html_body=draft.html_body,
+                        personalization_fields_used=draft.personalization_fields_used,
+                        key_claims_used=draft.key_claims_used,
+                        generation_confidence=int(draft.confidence * 100),
+                        needs_human_review=draft.needs_human_review,
+                        review_reasons=draft.review_reasons,
+                    )
+                    self.session.add(email_draft)
+                    
+                    # Update row status to show draft is ready
+                    campaign_row.status = RowStatus.GENERATED
+                    
+                except Exception as draft_error:
+                    logger.error(f"Failed to generate draft for row {campaign_row.id}: {draft_error}")
+                    draft_errors += 1
+                    campaign_row.error_message = f"Draft generation failed: {str(draft_error)}"
+                
+                # Commit every 10 rows to avoid large transactions
+                if len(row_ids) % 10 == 0:
+                    await self.session.commit()
             
             await self.session.commit()
             
@@ -250,13 +288,14 @@ class CampaignGraphNodes:
             state.totals = {
                 "total_rows": len(row_ids),
                 "skipped_no_email": skipped_count,
+                "draft_errors": draft_errors,
                 "processed": 0,
                 "sent": 0,
                 "failed": 0,
                 "skipped": 0,
             }
             
-            logger.info(f"Created {len(row_ids)} recipient records (skipped {skipped_count} without email)")
+            logger.info(f"Created {len(row_ids)} recipient records with drafts (skipped {skipped_count} without email, {draft_errors} draft errors)")
             
         except Exception as e:
             logger.error(f"Failed to prepare recipients: {e}")

@@ -41,3 +41,19 @@ class RecipientDetailResponse(BaseModel):
     row: RecipientRowResponse
     email_draft: dict | None = None
     send_event: dict | None = None
+
+
+class EmailDraftResponse(BaseModel):
+    """Email draft response."""
+    
+    id: str
+    campaign_row_id: str
+    subject: str
+    plain_text_body: str
+    html_body: str
+    personalization_fields_used: list[str] = Field(default_factory=list)
+    key_claims_used: list[str] = Field(default_factory=list)
+    generation_confidence: int = 0
+    needs_human_review: bool = False
+    review_reasons: list[str] = Field(default_factory=list)
+    created_at: str | None = None

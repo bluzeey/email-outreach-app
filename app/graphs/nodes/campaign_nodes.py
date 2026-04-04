@@ -263,23 +263,6 @@ class CampaignGraphNodes:
             state.errors.append(f"Recipient preparation error: {str(e)}")
         
         return state
-            
-            state.row_ids = row_ids
-            state.totals = {
-                "total_rows": len(row_ids),
-                "processed": 0,
-                "sent": 0,
-                "failed": 0,
-                "skipped": 0,
-            }
-            
-            logger.info(f"Created {len(row_ids)} recipient records")
-            
-        except Exception as e:
-            logger.error(f"Failed to prepare recipients: {e}")
-            state.errors.append(f"Recipient preparation error: {str(e)}")
-        
-        return state
     
     async def dispatch_recipient_runs(self, state: CampaignGraphState) -> CampaignGraphState:
         """Dispatch recipient processing jobs."""

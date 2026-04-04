@@ -67,3 +67,4 @@ class CampaignPlan(BaseModel):
     do_not_claim: list[str] = Field(default_factory=list)
     review_policy: dict = Field(default_factory=dict)
     sending_policy: dict = Field(default_factory=dict)
+    context: str = ""  # User-provided campaign context (e.g., about Granveo)

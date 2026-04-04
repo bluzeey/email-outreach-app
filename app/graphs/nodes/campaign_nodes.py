@@ -153,6 +153,9 @@ class CampaignGraphNodes:
             # Generate plan
             plan = await self.schema_service.generate_campaign_plan(schema, sample_rows)
             
+            # Add the campaign context to the plan
+            plan.context = state.context or ""
+            
             state.campaign_plan = plan.model_dump()
             
             # Emit progress
@@ -189,6 +192,11 @@ class CampaignGraphNodes:
             
             schema = CsvSchemaInference(**state.inferred_schema)
             plan = CampaignPlan(**state.campaign_plan)
+            
+            # Ensure context is available for draft generation
+            if not plan.context and state.context:
+                plan.context = state.context
+                logger.debug(f"Added context to plan for sample drafts: {plan.context[:50]}...")
             
             # Load sample rows
             df = DataLoader.load_file(state.csv_path)
@@ -287,6 +295,9 @@ class CampaignGraphNodes:
             # Handle missing campaign plan - create default plan
             if state.campaign_plan and isinstance(state.campaign_plan, dict):
                 plan = CampaignPlan(**state.campaign_plan)
+                # Ensure context is preserved
+                if not plan.context and state.context:
+                    plan.context = state.context
                 logger.info(f"Campaign plan loaded: {plan.inferred_goal}")
             else:
                 # Create a default plan if generation failed
@@ -301,7 +312,8 @@ class CampaignGraphNodes:
                     subject_style="direct",
                     personalization_priority=[],
                     review_policy={},
-                    sending_policy={}
+                    sending_policy={},
+                    context=state.context or ""  # Include user context
                 )
                 logger.warning(f"Using default campaign plan for {state.campaign_id}")
             

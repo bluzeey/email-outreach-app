@@ -99,9 +99,17 @@ class DraftGenerationService:
         # Build prompt
         context_str = "\n".join([f"- {k}: {v}" for k, v in personalization_context.items()])
         
+        # Include campaign context if provided
+        campaign_context_section = ""
+        if campaign_plan.context:
+            campaign_context_section = f"""Campaign Context (the product/service you are promoting):
+{campaign_plan.context}
+
+"""
+        
         prompt = f"""You are an expert at writing personalized cold outreach emails.
 
-Campaign Goal: {campaign_plan.inferred_goal}
+{campaign_context_section}Campaign Goal: {campaign_plan.inferred_goal}
 Tone: {campaign_plan.tone}
 Style Constraints:
 {chr(10).join([f"- {c}" for c in campaign_plan.style_constraints])}
@@ -120,6 +128,7 @@ Generate an email with:
 3. HTML version of the body (basic formatting with <p> tags)
 
 Requirements:
+- Reference the product/service from the Campaign Context naturally
 - Personalize using the recipient information provided
 - Never fabricate facts not in the data
 - Use natural, conversational language
@@ -189,6 +198,11 @@ Respond with ONLY valid JSON:
         first_name = personalization_context.get("first_name", "there")
         company = personalization_context.get("company", "your company")
         
+        # Include context if available
+        context_intro = ""
+        if campaign_plan.context:
+            context_intro = f"\n\n{campaign_plan.context}"
+        
         # Generate subject
         if company and company != "your company":
             subject = f"Quick question about {company}"
@@ -198,7 +212,7 @@ Respond with ONLY valid JSON:
         # Generate body
         plain_body = f"""Hi {first_name},
 
-I came across {company} and wanted to reach out.
+I came across {company} and wanted to reach out.{context_intro}
 
 {campaign_plan.inferred_goal}
 
@@ -209,6 +223,8 @@ Best regards"""
         # Simple HTML conversion
         html_body = f"<p>Hi {first_name},</p>\n\n"
         html_body += f"<p>I came across {company} and wanted to reach out.</p>\n\n"
+        if context_intro:
+            html_body += f"<p>{campaign_plan.context}</p>\n\n"
         html_body += f"<p>{campaign_plan.inferred_goal}</p>\n\n"
         html_body += f"<p>{campaign_plan.cta}.</p>\n\n"
         html_body += "<p>Best regards</p>"

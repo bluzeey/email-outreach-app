@@ -42,7 +42,6 @@ async def recover_interrupted_campaigns():
                 )
                 
                 # Keep status as PROFILING but mark with error message
-                # This allows the analyze endpoint to resume from checkpoint
                 if not campaign.errors:
                     campaign.errors = []
                 
@@ -55,6 +54,9 @@ async def recover_interrupted_campaigns():
                     f"Campaign {campaign.id} marked for resume",
                     campaign_id=campaign.id,
                 )
+                
+                # Commit immediately for each campaign to avoid holding locks
+                await session.flush()
             
             await session.commit()
             

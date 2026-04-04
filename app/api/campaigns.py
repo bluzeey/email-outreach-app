@@ -79,7 +79,37 @@ def _campaign_to_response(campaign: Campaign) -> CampaignResponse:
     )
 
 
+import asyncio
+from functools import wraps
+
+
+def with_retry(max_attempts=3, delay=0.5):
+    """Decorator for retrying database operations with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_str = str(e).lower()
+                    # Only retry on database lock errors
+                    if "database is locked" in error_str or "busy" in error_str:
+                        if attempt < max_attempts:
+                            wait_time = delay * (2 ** (attempt - 1))  # Exponential backoff
+                            logger.warning(f"Database locked, retrying in {wait_time}s (attempt {attempt}/{max_attempts})")
+                            await asyncio.sleep(wait_time)
+                            continue
+                    raise
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 @router.post("", response_model=CampaignResponse)
+@with_retry(max_attempts=5, delay=0.5)
 async def create_campaign(
     request: CampaignCreateRequest,
     session: AsyncSession = Depends(get_session),
@@ -548,6 +578,7 @@ async def run_campaign(
 
 
 @router.post("/{campaign_id}/toggle-dry-run", response_model=CampaignActionResponse)
+@with_retry(max_attempts=5, delay=0.5)
 async def toggle_dry_run(
     campaign_id: str,
     session: AsyncSession = Depends(get_session),

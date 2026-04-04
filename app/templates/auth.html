@@ -7,15 +7,15 @@
     <link rel="stylesheet" href="/static/style.css">
     <style>
         .auth-container {
-            max-width: 600px;
+            max-width: 560px;
             margin: 0 auto;
         }
         
         .auth-card {
             background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            padding: 2rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: 2.5rem;
             margin-bottom: 2rem;
         }
         
@@ -26,41 +26,42 @@
         
         .auth-header h2 {
             margin-bottom: 0.5rem;
+            font-size: 1.5rem;
         }
         
         .auth-header p {
-            color: #6b7280;
+            color: var(--color-gray-500);
+            font-size: 0.95rem;
         }
         
-        .gmail-icon {
+        .email-icon {
             width: 64px;
             height: 64px;
             margin: 0 auto 1.5rem;
-            background: linear-gradient(135deg, #ea4335 0%, #fbbc05 25%, #34a853 50%, #4285f4 75%);
-            border-radius: 16px;
+            background: var(--color-primary);
+            border-radius: var(--radius);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-size: 2rem;
-            font-weight: bold;
         }
         
         .status-card {
-            border-radius: 8px;
+            border-radius: var(--radius);
             padding: 1.5rem;
             margin-bottom: 1.5rem;
             text-align: center;
         }
         
         .status-card.connected {
-            background: #ecfdf5;
-            border: 2px solid #10b981;
+            background: var(--color-success-light);
+            border: 1px solid var(--color-success);
         }
         
         .status-card.disconnected {
-            background: #fef3c7;
-            border: 2px solid #f59e0b;
+            background: var(--color-gray-50);
+            border: 1px solid var(--color-gray-200);
         }
         
         .status-icon {
@@ -68,38 +69,38 @@
             margin-bottom: 0.5rem;
         }
         
-        .btn-gmail {
-            background: linear-gradient(135deg, #ea4335 0%, #fbbc05 25%, #34a853 50%, #4285f4 75%);
+        .btn-connect {
+            background: var(--color-primary);
             color: white;
             padding: 0.875rem 2rem;
-            font-size: 1.125rem;
-            border-radius: 8px;
+            font-size: 1rem;
+            border-radius: var(--radius);
             display: inline-flex;
             align-items: center;
             gap: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow);
         }
         
-        .btn-gmail:hover {
-            opacity: 0.95;
-            transform: translateY(-1px);
-            box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15);
+        .btn-connect:hover {
+            background: var(--color-primary-dark);
+            box-shadow: var(--shadow-md);
         }
         
         .permissions-box {
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
+            background: var(--color-gray-50);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius);
             padding: 1.5rem;
             margin-top: 2rem;
         }
         
         .permissions-box h4 {
-            color: #374151;
+            color: var(--color-gray-700);
             margin-bottom: 1rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            font-size: 0.95rem;
         }
         
         .permission-list {
@@ -113,29 +114,30 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            color: #6b7280;
+            color: var(--color-gray-600);
+            font-size: 0.9rem;
         }
         
         .permission-list li.allowed {
-            color: #059669;
+            color: var(--color-success);
         }
         
         .permission-list li.denied {
-            color: #dc2626;
+            color: var(--color-gray-400);
             text-decoration: line-through;
         }
         
-        .check-icon { color: #10b981; }
-        .cross-icon { color: #ef4444; }
+        .check-icon { color: var(--color-success); }
+        .cross-icon { color: var(--color-gray-400); }
         
         .email-display {
             background: white;
-            border-radius: 6px;
+            border-radius: var(--radius-sm);
             padding: 0.75rem 1rem;
             margin: 1rem 0;
             font-weight: 600;
-            color: #1f2937;
-            border: 1px solid #e5e7eb;
+            color: var(--color-gray-800);
+            border: 1px solid var(--color-gray-200);
         }
         
         .actions-centered {
@@ -149,8 +151,8 @@
             display: inline-block;
             width: 20px;
             height: 20px;
-            border: 2px solid #e5e7eb;
-            border-top-color: #2563eb;
+            border: 2px solid var(--color-gray-200);
+            border-top-color: var(--color-primary);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -174,9 +176,9 @@
         <main class="auth-container">
             <div class="auth-card">
                 <div class="auth-header">
-                    <div class="gmail-icon">G</div>
-                    <h2>Connect Gmail Account</h2>
-                    <p>Send personalized emails directly from your Gmail account</p>
+                    <div class="email-icon">@</div>
+                    <h2>Connect Email Account</h2>
+                    <p>Link your Gmail account to send personalized emails</p>
                 </div>
                 
                 <div id="auth-status" class="status-card disconnected">
@@ -185,37 +187,37 @@
                 </div>
                 
                 <div id="auth-actions" class="actions-centered" style="display: none;">
-                    <a id="connect-btn" href="/auth/google/start" class="btn btn-gmail">
-                        <span>Connect with Google</span>
+                    <a id="connect-btn" href="/auth/google/start" class="btn btn-connect">
+                        <span>Connect Gmail</span>
                     </a>
                     <button id="disconnect-btn" class="btn btn-secondary" style="display: none;">
-                        Disconnect Account
+                        Disconnect
                     </button>
                 </div>
                 
                 <div class="permissions-box">
                     <h4>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                         </svg>
-                        Permissions Required
+                        Permissions
                     </h4>
                     <ul class="permission-list">
                         <li class="allowed">
                             <span class="check-icon">✓</span>
-                            <strong>Send emails only</strong> - Send emails on your behalf
+                            <span>Send emails on your behalf</span>
                         </li>
                         <li class="denied">
                             <span class="cross-icon">✗</span>
-                            Read your inbox (not requested)
+                            <span>Read your inbox</span>
                         </li>
                         <li class="denied">
                             <span class="cross-icon">✗</span>
-                            Access your contacts (not requested)
+                            <span>Access your contacts</span>
                         </li>
                         <li class="denied">
                             <span class="cross-icon">✗</span>
-                            Modify or delete emails (not requested)
+                            <span>Modify or delete emails</span>
                         </li>
                     </ul>
                 </div>
@@ -228,7 +230,6 @@
     </div>
     
     <script>
-        // Check auth status on page load
         async function checkAuthStatus() {
             try {
                 const response = await fetch('/auth/status');
@@ -245,30 +246,35 @@
                     statusCard.className = 'status-card connected';
                     statusCard.innerHTML = `
                         <div class="status-icon">✓</div>
-                        <h3>Connected!</h3>
+                        <h3>Connected</h3>
                         <div class="email-display">${data.account.email}</div>
-                        <p>Connected on ${new Date(data.account.connected_at).toLocaleDateString()}</p>
+                        <p style="color: var(--color-gray-500); font-size: 0.875rem;">
+                            Connected on ${new Date(data.account.connected_at).toLocaleDateString()}
+                        </p>
                     `;
                     connectBtn.style.display = 'none';
                     disconnectBtn.style.display = 'inline-block';
                 } else {
                     statusCard.className = 'status-card disconnected';
                     statusCard.innerHTML = `
-                        <div class="status-icon">!</div>
-                        <h3>Not Connected</h3>
-                        <p>Connect your Gmail account to start sending personalized emails</p>
+                        <div class="status-icon" style="color: var(--color-gray-400);">!</div>
+                        <h3 style="color: var(--color-gray-700);">Not Connected</h3>
+                        <p style="color: var(--color-gray-500);">
+                            Connect your Gmail account to start sending emails
+                        </p>
                     `;
                     connectBtn.style.display = 'inline-flex';
                     disconnectBtn.style.display = 'none';
                 }
             } catch (error) {
                 document.getElementById('auth-status').innerHTML = `
-                    <div class="error">Failed to check auth status: ${error.message}</div>
+                    <div class="alert alert-error">
+                        Failed to check status: ${error.message}
+                    </div>
                 `;
             }
         }
         
-        // Handle disconnect
         document.getElementById('disconnect-btn')?.addEventListener('click', async () => {
             if (!confirm('Are you sure you want to disconnect your Gmail account?')) return;
             
@@ -286,7 +292,6 @@
             }
         });
         
-        // Check status on load
         checkAuthStatus();
     </script>
 </body>

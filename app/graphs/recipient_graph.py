@@ -72,7 +72,7 @@ def create_recipient_graph(session):
     
     # Review interrupt - conditional
     def review_router(state: RecipientGraphState):
-        if state.approval_status == "approved":
+        if state.approval_status in ["approved", "not_required"]:
             return "send_email_via_gmail"
         elif state.approval_status == "rejected":
             return "persist_send_outcome"  # Skip send

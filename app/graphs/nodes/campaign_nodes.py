@@ -216,19 +216,27 @@ class CampaignGraphNodes:
             from app.schemas.csv_inference import CsvSchemaInference
             schema = CsvSchemaInference(**state.inferred_schema)
             
-            # Create rows
+            # Create rows - skip rows without valid email
             row_ids = []
+            skipped_count = 0
             for idx in range(len(df)):
                 row_data = DataLoader.get_row_as_dict(df, idx)
                 
-                # Extract email
+                # Extract and validate email
                 recipient_email = row_data.get(schema.primary_email_column, "")
+                recipient_email = str(recipient_email).strip() if recipient_email else ""
+                
+                # Skip rows without valid email
+                if not recipient_email or recipient_email.lower() in ["nan", "null", "none", "", "n/a"]:
+                    logger.info(f"Skipping row {idx + 1}: no valid email address")
+                    skipped_count += 1
+                    continue
                 
                 campaign_row = CampaignRow(
                     campaign_id=state.campaign_id,
                     row_number=idx + 1,
                     raw_row_json=row_data,
-                    recipient_email=recipient_email if recipient_email else None,
+                    recipient_email=recipient_email,
                     status=RowStatus.QUEUED,
                 )
                 
@@ -237,6 +245,24 @@ class CampaignGraphNodes:
                 row_ids.append(campaign_row.id)
             
             await self.session.commit()
+            
+            state.row_ids = row_ids
+            state.totals = {
+                "total_rows": len(row_ids),
+                "skipped_no_email": skipped_count,
+                "processed": 0,
+                "sent": 0,
+                "failed": 0,
+                "skipped": 0,
+            }
+            
+            logger.info(f"Created {len(row_ids)} recipient records (skipped {skipped_count} without email)")
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare recipients: {e}")
+            state.errors.append(f"Recipient preparation error: {str(e)}")
+        
+        return state
             
             state.row_ids = row_ids
             state.totals = {

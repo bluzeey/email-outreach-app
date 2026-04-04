@@ -26,6 +26,7 @@ class CampaignGraphState(BaseModel):
         "created",
         "profiling",
         "awaiting_schema_review",
+        "awaiting_campaign_approval",
         "awaiting_approval_review",
         "running",
         "paused",

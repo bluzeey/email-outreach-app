@@ -277,8 +277,10 @@ class RecipientGraphNodes:
         """Handle row-level review if required."""
         logger.info(f"Checking if row review needed for {state.recipient_id}")
         
+        # If review is not required, mark as not_required and proceed
         if not state.review_required:
             state.approval_status = "not_required"
+            logger.info(f"Row {state.recipient_id} does not require review, proceeding to send")
             return state
         
         # This node pauses for human review

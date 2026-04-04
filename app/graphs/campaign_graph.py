@@ -44,13 +44,24 @@ def create_campaign_graph(session):
     
     # Compile with checkpointing
     checkpoint_url = settings.CHECKPOINT_DATABASE_URL
+    
+    # Extract database path from URL
     if checkpoint_url.startswith("sqlite:///"):
-        checkpoint_url = checkpoint_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+        db_path = checkpoint_url.replace("sqlite:///", "")
+    elif checkpoint_url.startswith("sqlite+aiosqlite:///"):
+        db_path = checkpoint_url.replace("sqlite+aiosqlite:///", "")
+    else:
+        db_path = "./checkpoints.db"
+    
+    # Ensure directory exists for the checkpoint database
+    import os
+    db_dir = os.path.dirname(db_path)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
     
     try:
-        checkpointer = SqliteSaver.from_conn_string(
-            checkpoint_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
-        )
+        checkpointer = SqliteSaver.from_conn_string(db_path)
+        logger.info(f"Checkpointing configured with database: {db_path}")
         return workflow.compile(checkpointer=checkpointer)
     except Exception as e:
         logger.warning(f"Failed to setup checkpointing: {e}, running without persistence")

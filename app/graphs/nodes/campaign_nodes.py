@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import Campaign, CampaignRow, CampaignStatus, RowStatus
+from app.db.models import CampaignRow, RowStatus
 from app.graphs.state import CampaignGraphState
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
@@ -26,14 +26,12 @@ class CampaignGraphNodes:
         logger.info(f"Loading CSV for campaign {state.campaign_id}")
         
         try:
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if not campaign or not campaign.csv_storage_path:
-                state.errors.append("Campaign or CSV not found")
+            # CSV path should already be in state from API endpoint
+            if not state.csv_path:
+                state.errors.append("CSV path not found in state")
                 state.status = "failed"
                 return state
             
-            state.csv_path = campaign.csv_storage_path
-            state.context = campaign.context or ""  # Load campaign context
             state.status = "profiling"
             
         except Exception as e:
@@ -89,12 +87,6 @@ class CampaignGraphNodes:
             state.inferred_schema = inference.model_dump()
             state.schema_confidence = inference.confidence
             
-            # Update campaign in DB
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if campaign:
-                campaign.inferred_schema_json = state.inferred_schema
-                await self.session.commit()
-            
             # Check if review needed
             if inference.confidence < 0.7 or inference.unresolved_questions:
                 state.status = "awaiting_schema_review"
@@ -126,12 +118,6 @@ class CampaignGraphNodes:
             
             state.campaign_plan = plan.model_dump()
             
-            # Update campaign in DB
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if campaign:
-                campaign.campaign_plan_json = state.campaign_plan
-                await self.session.commit()
-            
         except Exception as e:
             logger.error(f"Failed to generate campaign plan: {e}")
             state.errors.append(f"Campaign plan error: {str(e)}")
@@ -158,13 +144,7 @@ class CampaignGraphNodes:
             drafts = await draft_service.generate_sample_drafts(schema, plan, sample_rows, 3)
             
             state.sample_drafts = [d.model_dump() for d in drafts]
-            
-            # Store sample drafts in database for UI display
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if campaign:
-                campaign.sample_drafts_json = state.sample_drafts
-                await self.session.commit()
-                logger.info(f"Stored {len(drafts)} sample drafts in database")
+            logger.info(f"Generated {len(drafts)} sample drafts")
             
         except Exception as e:
             logger.error(f"Failed to generate sample drafts: {e}")
@@ -180,23 +160,40 @@ class CampaignGraphNodes:
         """
         logger.info(f"Analysis complete for campaign {state.campaign_id}, awaiting approval")
         
-        # Determine final status based on schema confidence
-        if state.schema_confidence and state.schema_confidence < 0.7:
+        # Verify recipients were created
+        from sqlalchemy import func, select
+        
+        try:
+            recipient_count_result = await self.session.execute(
+                select(func.count(CampaignRow.id)).where(CampaignRow.campaign_id == state.campaign_id)
+            )
+            recipient_count = recipient_count_result.scalar() or 0
+            
+            logger.info(f"Verification: {recipient_count} recipient rows exist for campaign {state.campaign_id}")
+            
+            if recipient_count == 0:
+                error_msg = "No recipient rows were created during analysis"
+                logger.error(error_msg)
+                state.errors.append(error_msg)
+                state.status = "failed"
+            else:
+                state.totals = state.totals or {}
+                state.totals["total_rows"] = recipient_count
+                
+        except Exception as e:
+            logger.error(f"Failed to verify recipient count: {e}")
+        
+        # Determine final status based on schema confidence and errors
+        if state.status == "failed":
+            # Already marked as failed (no recipients created)
+            pass
+        elif state.schema_confidence and state.schema_confidence < 0.7:
             state.status = "awaiting_schema_review"
         else:
             state.status = "awaiting_campaign_approval"
         
         state.approval_status = "pending"
-        
-        # Update campaign status in database
-        try:
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if campaign:
-                campaign.status = CampaignStatus(state.status)
-                await self.session.commit()
-                logger.info(f"Updated campaign status to {state.status}")
-        except Exception as e:
-            logger.error(f"Failed to update campaign status: {e}")
+        logger.info(f"Final status: {state.status} with {state.totals.get('total_rows', 0)} recipients")
         
         return state
     
@@ -205,26 +202,54 @@ class CampaignGraphNodes:
         logger.info(f"Preparing recipient records for {state.campaign_id}")
         
         try:
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if not campaign:
-                state.errors.append("Campaign not found")
+            # Load CSV directly from state (no need to fetch Campaign)
+            if not state.csv_path:
+                state.errors.append("No CSV path in state")
+                logger.error(f"No CSV path for campaign {state.campaign_id}")
                 return state
             
-            # Load CSV
+            logger.info(f"Loading file: {state.csv_path}")
             df = DataLoader.load_file(state.csv_path)
+            logger.info(f"Loaded {len(df)} rows from file")
             
             # Get schema and plan
             from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
             from app.services.draft_generation_service import DraftGenerationService
+            from app.db.models import EmailDraft
             
             schema = CsvSchemaInference(**state.inferred_schema)
-            plan = CampaignPlan(**state.campaign_plan)
+            logger.info(f"Schema loaded - primary_email_column: {schema.primary_email_column}")
+            
+            # Handle missing campaign plan - create default plan
+            if state.campaign_plan and isinstance(state.campaign_plan, dict):
+                plan = CampaignPlan(**state.campaign_plan)
+                logger.info(f"Campaign plan loaded: {plan.inferred_goal}")
+            else:
+                # Create a default plan if generation failed
+                plan = CampaignPlan(
+                    campaign_name="Outreach Campaign",
+                    inferred_goal="Connect with recipients",
+                    target_audience="General audience",
+                    tone="professional",
+                    cta="Looking forward to hearing from you",
+                    style_constraints=["Keep it brief"],
+                    do_not_claim=["Don't make false claims"],
+                    subject_style="direct",
+                    personalization_priority=[],
+                    review_policy={},
+                    sending_policy={}
+                )
+                logger.warning(f"Using default campaign plan for {state.campaign_id}")
+            
             draft_service = DraftGenerationService()
             
             # Create rows - skip rows without valid email
             row_ids = []
             skipped_count = 0
             draft_errors = 0
+            created_count = 0
+            
+            logger.info(f"Starting to process {len(df)} rows...")
             
             for idx in range(len(df)):
                 row_data = DataLoader.get_row_as_dict(df, idx)
@@ -235,24 +260,32 @@ class CampaignGraphNodes:
                 
                 # Skip rows without valid email
                 if not recipient_email or recipient_email.lower() in ["nan", "null", "none", "", "n/a"]:
-                    logger.info(f"Skipping row {idx + 1}: no valid email address")
                     skipped_count += 1
                     continue
                 
-                # Create recipient record
-                campaign_row = CampaignRow(
-                    campaign_id=state.campaign_id,
-                    row_number=idx + 1,
-                    raw_row_json=row_data,
-                    recipient_email=recipient_email,
-                    status=RowStatus.QUEUED,
-                )
+                # Create recipient record FIRST (before draft generation)
+                # This ensures rows exist even if draft generation fails
+                try:
+                    campaign_row = CampaignRow(
+                        campaign_id=state.campaign_id,
+                        row_number=idx + 1,
+                        raw_row_json=row_data,
+                        recipient_email=recipient_email,
+                        status=RowStatus.QUEUED,
+                    )
+                    
+                    self.session.add(campaign_row)
+                    await self.session.flush()
+                    row_ids.append(campaign_row.id)
+                    created_count += 1
+                    
+                    logger.debug(f"Created row {idx + 1} with email {recipient_email}")
+                except Exception as row_error:
+                    logger.error(f"Failed to create row {idx + 1}: {row_error}")
+                    state.errors.append(f"Row {idx + 1} creation error: {str(row_error)}")
+                    continue
                 
-                self.session.add(campaign_row)
-                await self.session.flush()
-                row_ids.append(campaign_row.id)
-                
-                # Generate email draft for preview
+                # Generate email draft for preview (AFTER row is created)
                 try:
                     draft = await draft_service.generate_draft(schema, plan, row_data)
                     
@@ -277,12 +310,24 @@ class CampaignGraphNodes:
                     logger.error(f"Failed to generate draft for row {campaign_row.id}: {draft_error}")
                     draft_errors += 1
                     campaign_row.error_message = f"Draft generation failed: {str(draft_error)}"
+                    # Keep row as QUEUED so it can be retried
                 
-                # Commit every 10 rows to avoid large transactions
+                # Flush every 10 rows to avoid memory issues (commit happens at API level)
                 if len(row_ids) % 10 == 0:
-                    await self.session.commit()
+                    try:
+                        await self.session.flush()
+                        logger.info(f"Flushed batch of 10 rows (total created: {created_count})")
+                    except Exception as flush_error:
+                        logger.error(f"Failed to flush batch: {flush_error}")
+                        state.errors.append(f"Flush error: {str(flush_error)}")
             
-            await self.session.commit()
+            # Final flush for remaining rows
+            try:
+                await self.session.flush()
+                logger.info(f"Final flush - created {created_count} recipient records")
+            except Exception as final_flush_error:
+                logger.error(f"Failed to finalize flush: {final_flush_error}")
+                state.errors.append(f"Final flush error: {str(final_flush_error)}")
             
             state.row_ids = row_ids
             state.totals = {
@@ -297,9 +342,15 @@ class CampaignGraphNodes:
             
             logger.info(f"Created {len(row_ids)} recipient records with drafts (skipped {skipped_count} without email, {draft_errors} draft errors)")
             
+            # Add error summary if there were issues
+            if state.errors:
+                logger.warning(f"Completed with {len(state.errors)} errors: {state.errors}")
+            
         except Exception as e:
             logger.error(f"Failed to prepare recipients: {e}")
             state.errors.append(f"Recipient preparation error: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         return state
     
@@ -348,12 +399,6 @@ class CampaignGraphNodes:
             if total > 0 and processed >= total:
                 state.status = "completed"
             
-            # Update campaign in DB
-            campaign = await self.session.get(Campaign, state.campaign_id)
-            if campaign:
-                campaign.totals_json = state.totals
-                await self.session.commit()
-            
         except Exception as e:
             logger.error(f"Failed to aggregate progress: {e}")
         
@@ -364,12 +409,6 @@ class CampaignGraphNodes:
         logger.info(f"Finalizing campaign {state.campaign_id}")
         
         # Final cleanup and reporting
-        
-        # Update campaign status in DB
-        campaign = await self.session.get(Campaign, state.campaign_id)
-        if campaign:
-            campaign.status = CampaignStatus(state.status)
-            campaign.totals_json = state.totals
-            await self.session.commit()
+        # Campaign table updates happen at API level
         
         return state

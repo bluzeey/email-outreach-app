@@ -185,25 +185,39 @@ async def analyze_campaign(
         if not campaign.csv_storage_path:
             raise HTTPException(status_code=400, detail="No CSV uploaded")
         
-        # Create graph and run analysis
-        graph = create_campaign_graph(session)
-        thread_id = get_campaign_thread_id(campaign_id)
+        # Create a fresh session for graph operations to avoid SQLite locking
+        async with AsyncSessionLocal() as graph_session:
+            try:
+                # Create graph with fresh session
+                graph = create_campaign_graph(graph_session)
+                thread_id = get_campaign_thread_id(campaign_id)
+                
+                initial_state = CampaignGraphState(
+                    campaign_id=campaign_id,
+                    context=campaign.context or "",
+                    csv_path=campaign.csv_storage_path,
+                    dry_run=campaign.dry_run,
+                )
+                
+                # Run graph up to plan generation
+                result = await graph.ainvoke(
+                    initial_state,
+                    config={"configurable": {"thread_id": thread_id}},
+                )
+                
+                # Commit all graph operations
+                await graph_session.commit()
+                
+            except Exception as e:
+                await graph_session.rollback()
+                raise e
         
-        initial_state = CampaignGraphState(
-            campaign_id=campaign_id,
-            context=campaign.context or "",
-            csv_path=campaign.csv_storage_path,
-            dry_run=campaign.dry_run,
-        )
-        
-        # Run graph up to plan generation
-        result = await graph.ainvoke(
-            initial_state,
-            config={"configurable": {"thread_id": thread_id}},
-        )
-        
-        # Update campaign status
+        # Update campaign status in the original session
         campaign.status = CampaignStatus(result.get("status", "awaiting_schema_review"))
+        campaign.inferred_schema_json = result.get("inferred_schema", {})
+        campaign.campaign_plan_json = result.get("campaign_plan", {})
+        campaign.sample_drafts_json = result.get("sample_drafts", [])
+        campaign.totals_json = result.get("totals", {})
         await session.commit()
         
         return CampaignAnalyzeResponse(
@@ -758,7 +772,7 @@ async def get_recipient_draft(
 @router.get("/{campaign_id}/export", response_model=CampaignExportResponse)
 async def export_campaign(
     campaign_id: str,
-    format: str = Query("csv", regex="^(csv|json)$"),
+    format: str = Query("csv", pattern="^(csv|json)$"),
     session: AsyncSession = Depends(get_session),
 ):
     """Export campaign results."""

@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.csv_inference import (
     CampaignPlan,
@@ -220,7 +221,7 @@ Provide your analysis as JSON with these fields:
 Respond with only valid JSON."""
         
         try:
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
             response = await self.llm_client.ainvoke([HumanMessage(content=prompt)])
             content = response.content
             
@@ -333,7 +334,7 @@ Provide suggestions as JSON:
 Respond with only valid JSON."""
         
         try:
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
             response = await self.llm_client.ainvoke([HumanMessage(content=prompt)])
             content = response.content
             

@@ -137,7 +137,7 @@ Respond with ONLY valid JSON:
 }}"""
         
         try:
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
             response = await self.llm_client.ainvoke([HumanMessage(content=prompt)])
             content = response.content
             

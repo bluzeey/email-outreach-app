@@ -59,7 +59,10 @@
                         <p><strong>Created:</strong> ${new Date(campaign.created_at).toLocaleString()}</p>
                         ${campaign.csv_filename ? `<p><strong>File:</strong> ${campaign.csv_filename}</p>` : ''}
                         ${campaign.context ? `<p><strong>Context:</strong> ${campaign.context}</p>` : ''}
+                        ${campaign.totals_json && campaign.totals_json.total_rows ? `<p><strong>Recipients:</strong> ${campaign.totals_json.total_rows} valid emails</p>` : ''}
                     </div>
+                    
+                    ${campaign.errors && campaign.errors.length > 0 ? renderErrorsSection(campaign.errors) : ''}
                     
                     ${campaign.csv_filename ? '' : renderUploadSection()}
                     
@@ -82,8 +85,9 @@
                     loadProgress();
                 }
                 
-                // Load rows
-                loadRows();
+                // Load rows with expected count
+                const expectedCount = campaign.totals_json ? campaign.totals_json.total_rows : 0;
+                loadRows(expectedCount);
                 
             } catch (error) {
                 document.getElementById('campaign-details').innerHTML = `
@@ -128,6 +132,18 @@
                         <input type="file" name="file" accept=".csv,.xls,.xlsx,.xlsm" required>
                         <button type="submit" class="btn btn-primary">Upload</button>
                     </form>
+                </div>
+            `;
+        }
+        
+        function renderErrorsSection(errors) {
+            if (!errors || errors.length === 0) return '';
+            
+            const errorList = errors.map(e => `<li>${e}</li>`).join('');
+            return `
+                <div class="errors-section">
+                    <h3>⚠️ Processing Errors</h3>
+                    <ul>${errorList}</ul>
                 </div>
             `;
         }
@@ -208,7 +224,7 @@
             }
         }
         
-        async function loadRows() {
+        async function loadRows(expectedCount) {
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/rows?page=1&page_size=10`);
                 const data = await response.json();
@@ -216,9 +232,17 @@
                 const section = document.getElementById('rows-section');
                 
                 if (data.rows.length === 0) {
+                    // No recipients loaded yet
+                    let message = 'No recipients yet.';
+                    if (expectedCount && expectedCount > 0) {
+                        message = `Expected ${expectedCount} recipients, but none were created. This may indicate a processing error.`;
+                    } else {
+                        message = 'No recipients yet. Upload a CSV to add recipients.';
+                    }
+                    
                     section.innerHTML = `
                         <h3>Recipients</h3>
-                        <p>No recipients yet. Upload a CSV to add recipients.</p>
+                        <p class="warning">${message}</p>
                     `;
                     return;
                 }
@@ -495,6 +519,29 @@
             padding: 1.5rem;
             border-radius: 4px;
             margin: 1rem 0;
+        }
+        
+        .errors-section {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .errors-section h3 {
+            margin-top: 0;
+            color: #dc2626;
+        }
+        
+        .errors-section ul {
+            color: #7f1d1d;
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+        
+        .errors-section li {
+            margin: 0.5rem 0;
         }
         
         .schema-section, .plan-section {

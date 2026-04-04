@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class GeneratedEmail(BaseModel):
     """Generated email."""
     
+    to: str | None = None  # Recipient email
     subject: str
     plain_text_body: str
     html_body: str

@@ -32,6 +32,11 @@ class DraftGenerationService:
     ) -> GeneratedEmail:
         """Generate personalized email draft for a single row."""
         
+        # Extract recipient email
+        recipient_email = None
+        if schema.primary_email_column and schema.primary_email_column in row_data:
+            recipient_email = row_data[schema.primary_email_column]
+        
         # Build personalization context
         personalization_context = self._build_personalization_context(
             schema, row_data
@@ -41,7 +46,7 @@ class DraftGenerationService:
         if self.llm_client:
             try:
                 draft = await self._generate_with_llm(
-                    schema, campaign_plan, row_data, personalization_context
+                    schema, campaign_plan, row_data, personalization_context, recipient_email
                 )
                 if draft:
                     return draft
@@ -50,7 +55,7 @@ class DraftGenerationService:
         
         # Fallback to template-based generation
         return self._generate_with_template(
-            schema, campaign_plan, row_data, personalization_context
+            schema, campaign_plan, row_data, personalization_context, recipient_email
         )
     
     def _build_personalization_context(
@@ -91,6 +96,7 @@ class DraftGenerationService:
         campaign_plan: CampaignPlan,
         row_data: dict,
         personalization_context: dict,
+        recipient_email: str | None = None,
     ) -> GeneratedEmail | None:
         """Generate email using LLM."""
         if not self.llm_client:
@@ -171,6 +177,7 @@ Respond with ONLY valid JSON:
                 review_reasons.append("Low confidence in generation")
             
             return GeneratedEmail(
+                to=recipient_email,
                 subject=data["subject"],
                 plain_text_body=data["plain_text_body"],
                 html_body=data["html_body"],
@@ -191,6 +198,7 @@ Respond with ONLY valid JSON:
         campaign_plan: CampaignPlan,
         row_data: dict,
         personalization_context: dict,
+        recipient_email: str | None = None,
     ) -> GeneratedEmail:
         """Generate email using templates (fallback)."""
         
@@ -230,6 +238,7 @@ Best regards"""
         html_body += "<p>Best regards</p>"
         
         return GeneratedEmail(
+            to=recipient_email,
             subject=subject,
             plain_text_body=plain_body,
             html_body=html_body,

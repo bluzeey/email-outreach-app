@@ -237,14 +237,69 @@
         const pageSize = 10;
         let totalRows = 0;
         
+        // Pagination functions defined BEFORE loadRows to ensure availability
+        function renderPagination(currentPage, totalPages, total) {
+            console.log('renderPagination called:', { currentPage, totalPages, total });
+            
+            if (totalPages <= 1) {
+                console.log('Only 1 page, no pagination needed');
+                return '';
+            }
+            
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, total);
+            
+            let buttons = '';
+            
+            // Previous button
+            if (currentPage > 1) {
+                buttons += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">← Previous</button>`;
+            }
+            
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === currentPage) {
+                    buttons += `<button class="btn btn-small btn-active" disabled>${i}</button>`;
+                } else if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    buttons += `<button onclick="changePage(${i})" class="btn btn-small">${i}</button>`;
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    buttons += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+            
+            // Next button
+            if (currentPage < totalPages) {
+                buttons += `<button onclick="changePage(${currentPage + 1})" class="btn btn-small">Next →</button>`;
+            }
+            
+            const html = `
+                <div class="pagination">
+                    <div class="pagination-info">Showing ${startItem}-${endItem} of ${total}</div>
+                    <div class="pagination-buttons">${buttons}</div>
+                </div>
+            `;
+            console.log('Pagination HTML generated:', html);
+            return html;
+        }
+        
+        function changePage(page) {
+            console.log('changePage called:', page);
+            loadRows(totalRows, page);
+        }
+        
         async function loadRows(expectedCount, page = 1) {
             try {
+                console.log('loadRows called:', { expectedCount, page });
                 currentPage = page;
                 const response = await fetch(`/api/campaigns/${campaignId}/rows?page=${page}&page_size=${pageSize}`);
                 const data = await response.json();
                 
+                console.log('loadRows data received:', { total: data.total, rowsCount: data.rows.length });
+                
                 totalRows = data.total;
                 const totalPages = Math.ceil(totalRows / pageSize);
+                
+                console.log('Pagination calc:', { totalRows, totalPages, pageSize });
                 
                 const section = document.getElementById('rows-section');
                 
@@ -263,6 +318,9 @@
                     `;
                     return;
                 }
+                
+                const paginationHtml = renderPagination(page, totalPages, data.total);
+                console.log('Pagination HTML length:', paginationHtml.length);
                 
                 section.innerHTML = `
                     <h3>Recipients (${data.total} total)</h3>
@@ -292,9 +350,10 @@
                             `).join('')}
                         </tbody>
                     </table>
-                    ${renderPagination(page, totalPages, data.total)}
+                    ${paginationHtml}
                 `;
             } catch (error) {
+                console.error('loadRows error:', error);
                 document.getElementById('rows-section').innerHTML = `
                     <h3>Recipients</h3>
                     <p class="error">Failed to load recipients: ${error.message}</p>
@@ -539,47 +598,6 @@
             } catch (error) {
                 alert('Error: ' + error.message);
             }
-        }
-        
-        function renderPagination(currentPage, totalPages, total) {
-            if (totalPages <= 1) return '';
-            
-            const startItem = (currentPage - 1) * pageSize + 1;
-            const endItem = Math.min(currentPage * pageSize, total);
-            
-            let buttons = '';
-            
-            // Previous button
-            if (currentPage > 1) {
-                buttons += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">← Previous</button>`;
-            }
-            
-            // Page numbers
-            for (let i = 1; i <= totalPages; i++) {
-                if (i === currentPage) {
-                    buttons += `<button class="btn btn-small btn-active" disabled>${i}</button>`;
-                } else if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
-                    buttons += `<button onclick="changePage(${i})" class="btn btn-small">${i}</button>`;
-                } else if (i === currentPage - 2 || i === currentPage + 2) {
-                    buttons += `<span class="pagination-ellipsis">...</span>`;
-                }
-            }
-            
-            // Next button
-            if (currentPage < totalPages) {
-                buttons += `<button onclick="changePage(${currentPage + 1})" class="btn btn-small">Next →</button>`;
-            }
-            
-            return `
-                <div class="pagination">
-                    <div class="pagination-info">Showing ${startItem}-${endItem} of ${total}</div>
-                    <div class="pagination-buttons">${buttons}</div>
-                </div>
-            `;
-        }
-        
-        function changePage(page) {
-            loadRows(totalRows, page);
         }
         
         // Store draft data for editing

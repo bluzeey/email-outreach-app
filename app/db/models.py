@@ -98,6 +98,7 @@ class Campaign(Base):
     # Inferred data
     inferred_schema_json = Column(JSON, default=dict)
     campaign_plan_json = Column(JSON, default=dict)
+    sample_drafts_json = Column(JSON, default=list)  # Store AI-generated sample drafts
     
     # Execution tracking
     totals_json = Column(JSON, default=dict)

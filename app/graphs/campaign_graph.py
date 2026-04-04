@@ -29,6 +29,7 @@ def create_campaign_graph(session):
     workflow.add_node("infer_schema", nodes.infer_schema)
     workflow.add_node("infer_campaign_plan", nodes.infer_campaign_plan)
     workflow.add_node("generate_sample_drafts", nodes.generate_sample_drafts)
+    workflow.add_node("prepare_recipients", nodes.prepare_recipient_records)
     workflow.add_node("await_approval", nodes.await_approval_status)
     
     # Define edges - linear flow ending at await_approval
@@ -37,7 +38,8 @@ def create_campaign_graph(session):
     workflow.add_edge("profile_csv", "infer_schema")
     workflow.add_edge("infer_schema", "infer_campaign_plan")
     workflow.add_edge("infer_campaign_plan", "generate_sample_drafts")
-    workflow.add_edge("generate_sample_drafts", "await_approval")
+    workflow.add_edge("generate_sample_drafts", "prepare_recipients")
+    workflow.add_edge("prepare_recipients", "await_approval")
     workflow.add_edge("await_approval", END)
     
     # Compile with checkpointing

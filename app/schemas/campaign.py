@@ -27,6 +27,7 @@ class CampaignResponse(BaseModel):
     csv_filename: str | None = None
     inferred_schema_json: dict = Field(default_factory=dict)
     campaign_plan_json: dict = Field(default_factory=dict)
+    sample_drafts_json: list[dict] = Field(default_factory=list)
     totals_json: dict = Field(default_factory=dict)
     dispatch_cursor: int = 0
     created_at: str

@@ -63,6 +63,8 @@
                     
                     ${campaign.csv_filename ? '' : renderUploadSection()}
                     
+                    ${campaign.sample_drafts_json && campaign.sample_drafts_json.length > 0 ? renderSampleDraftsSection(campaign.sample_drafts_json) : ''}
+                    
                     ${campaign.inferred_schema_json && Object.keys(campaign.inferred_schema_json).length > 0 ? renderSchemaSection(campaign.inferred_schema_json) : ''}
                     
                     ${campaign.campaign_plan_json && Object.keys(campaign.campaign_plan_json).length > 0 ? renderPlanSection(campaign.campaign_plan_json) : ''}
@@ -151,6 +153,38 @@
                     <p><strong>Goal:</strong> ${plan.inferred_goal}</p>
                     <p><strong>Tone:</strong> ${plan.tone}</p>
                     <p><strong>CTA:</strong> ${plan.cta}</p>
+                </div>
+            `;
+        }
+        
+        function renderSampleDraftsSection(drafts) {
+            if (!drafts || drafts.length === 0) return '';
+            
+            const draftCards = drafts.map((draft, idx) => `
+                <div class="draft-card">
+                    <div class="draft-header">
+                        <span class="draft-number">Sample ${idx + 1}</span>
+                        <span class="draft-confidence">${Math.round((draft.generation_confidence || 0) * 100)}% confidence</span>
+                    </div>
+                    <div class="draft-content">
+                        <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
+                        <p><strong>Subject:</strong> ${draft.subject || 'N/A'}</p>
+                        <div class="draft-body">
+                            <p><strong>Email Body:</strong></p>
+                            <pre>${draft.plain_text_body || 'No content'}</pre>
+                        </div>
+                        ${draft.needs_human_review ? `<p class="warning">⚠️ Needs human review: ${(draft.review_reasons || []).join(', ')}</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            return `
+                <div class="drafts-section">
+                    <h3>📧 Sample Email Drafts</h3>
+                    <p class="section-desc">Review these AI-generated sample emails before approving the campaign:</p>
+                    <div class="drafts-container">
+                        ${draftCards}
+                    </div>
                 </div>
             `;
         }
@@ -401,6 +435,77 @@
             padding: 1.5rem;
             border-radius: 4px;
             margin: 1rem 0;
+        }
+        
+        .drafts-section {
+            background: #f0fdf4;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .drafts-section h3 {
+            margin-top: 0;
+            color: #166534;
+        }
+        
+        .section-desc {
+            color: #374151;
+            margin-bottom: 1rem;
+        }
+        
+        .drafts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .draft-card {
+            background: white;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        
+        .draft-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .draft-number {
+            font-weight: 600;
+            color: #166534;
+        }
+        
+        .draft-confidence {
+            background: #dcfce7;
+            color: #166534;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .draft-content p {
+            margin: 0.5rem 0;
+        }
+        
+        .draft-body {
+            margin-top: 1rem;
+        }
+        
+        .draft-body pre {
+            background: #f9fafb;
+            padding: 1rem;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: inherit;
+            line-height: 1.6;
+            border: 1px solid #e5e7eb;
         }
         
         .progress-bar {

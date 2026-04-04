@@ -62,6 +62,7 @@ def _campaign_to_response(campaign: Campaign) -> CampaignResponse:
         csv_filename=campaign.csv_filename,
         inferred_schema_json=campaign.inferred_schema_json or {},
         campaign_plan_json=campaign.campaign_plan_json or {},
+        sample_drafts_json=campaign.sample_drafts_json or [],
         totals_json=campaign.totals_json or {},
         dispatch_cursor=0,  # Would be tracked separately
         created_at=campaign.created_at.isoformat() if campaign.created_at else "",
@@ -230,23 +231,51 @@ async def approve_campaign(
         if campaign.status not in [CampaignStatus.AWAITING_CAMPAIGN_APPROVAL, CampaignStatus.AWAITING_SCHEMA_REVIEW]:
             raise HTTPException(status_code=400, detail=f"Campaign cannot be approved in status: {campaign.status.value}")
         
-        # Update campaign
+        # Update campaign status to RUNNING
         campaign.status = CampaignStatus.RUNNING
         await session.commit()
         
-        # Resume graph with approval
-        graph = create_campaign_graph(session)
-        thread_id = get_campaign_thread_id(campaign_id)
+        logger.info(f"Campaign {campaign_id} approved, starting recipient processing")
         
-        # Resume graph
-        result = await graph.ainvoke(
-            None,  # Continue from checkpoint
-            config={"configurable": {"thread_id": thread_id}},
+        # Get all pending recipient rows and process them
+        result = await session.execute(
+            select(CampaignRow).where(
+                CampaignRow.campaign_id == campaign_id,
+                CampaignRow.status.in_([RowStatus.QUEUED, RowStatus.NORMALIZED])
+            )
         )
+        pending_rows = result.scalars().all()
+        
+        logger.info(f"Found {len(pending_rows)} pending rows to process")
+        
+        # Process each row (generate drafts and send)
+        processed = 0
+        failed = 0
+        for row in pending_rows:
+            try:
+                await _process_recipient_row(session, campaign, row)
+                processed += 1
+            except Exception as e:
+                logger.error(f"Failed to process row {row.id}: {e}")
+                row.status = RowStatus.FAILED
+                row.error_message = str(e)
+                failed += 1
+        
+        await session.commit()
+        
+        # Check if all rows are processed
+        total_result = await session.execute(
+            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
+        )
+        total_rows = len(total_result.scalars().all())
+        
+        if processed + failed >= total_rows:
+            campaign.status = CampaignStatus.COMPLETED
+            await session.commit()
         
         return CampaignActionResponse(
             success=True,
-            message="Campaign approved and processing started",
+            message=f"Campaign approved! Processed {processed} recipients ({failed} failed).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )
@@ -307,9 +336,15 @@ async def run_campaign(
             account = result.scalar_one_or_none()
             if account:
                 campaign.gmail_account_id = account.id
-                await session.commit()
+            else:
+                raise HTTPException(status_code=400, detail="No Gmail account connected. Please connect your Gmail first.")
+            await session.commit()
         
-        # Run recipient processing for pending rows
+        # Set status to RUNNING
+        campaign.status = CampaignStatus.RUNNING
+        await session.commit()
+        
+        # Process pending rows
         result = await session.execute(
             select(CampaignRow).where(
                 CampaignRow.campaign_id == campaign_id,
@@ -318,8 +353,11 @@ async def run_campaign(
         )
         pending_rows = result.scalars().all()
         
+        logger.info(f"Found {len(pending_rows)} pending rows to process for campaign {campaign_id}")
+        
         # Process each row
         processed = 0
+        failed = 0
         for row in pending_rows:
             try:
                 await _process_recipient_row(session, campaign, row)
@@ -328,12 +366,23 @@ async def run_campaign(
                 logger.error(f"Failed to process row {row.id}: {e}")
                 row.status = RowStatus.FAILED
                 row.error_message = str(e)
+                failed += 1
         
         await session.commit()
         
+        # Check if all done
+        total_result = await session.execute(
+            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
+        )
+        total_rows = len(total_result.scalars().all())
+        
+        if processed + failed >= total_rows:
+            campaign.status = CampaignStatus.COMPLETED
+            await session.commit()
+        
         return CampaignActionResponse(
             success=True,
-            message=f"Campaign running. Processed {processed} rows.",
+            message=f"Campaign running. Processed {processed} rows ({failed} failed).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )

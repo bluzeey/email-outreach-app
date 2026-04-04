@@ -158,6 +158,13 @@ class CampaignGraphNodes:
             
             state.sample_drafts = [d.model_dump() for d in drafts]
             
+            # Store sample drafts in database for UI display
+            campaign = await self.session.get(Campaign, state.campaign_id)
+            if campaign:
+                campaign.sample_drafts_json = state.sample_drafts
+                await self.session.commit()
+                logger.info(f"Stored {len(drafts)} sample drafts in database")
+            
         except Exception as e:
             logger.error(f"Failed to generate sample drafts: {e}")
             state.errors.append(f"Sample draft error: {str(e)}")
@@ -165,16 +172,30 @@ class CampaignGraphNodes:
         return state
     
     async def await_approval_status(self, state: CampaignGraphState) -> CampaignGraphState:
-        """Set campaign status to await_approval_review and end.
+        """Set campaign status to awaiting approval and end.
         
         This node completes the analysis phase. Human approval will be handled
         via separate API call, not via graph execution.
         """
         logger.info(f"Analysis complete for campaign {state.campaign_id}, awaiting approval")
         
-        # Set status to indicate we're waiting for approval
-        state.status = "awaiting_approval_review"
+        # Determine final status based on schema confidence
+        if state.schema_confidence and state.schema_confidence < 0.7:
+            state.status = "awaiting_schema_review"
+        else:
+            state.status = "awaiting_campaign_approval"
+        
         state.approval_status = "pending"
+        
+        # Update campaign status in database
+        try:
+            campaign = await self.session.get(Campaign, state.campaign_id)
+            if campaign:
+                campaign.status = CampaignStatus(state.status)
+                await self.session.commit()
+                logger.info(f"Updated campaign status to {state.status}")
+        except Exception as e:
+            logger.error(f"Failed to update campaign status: {e}")
         
         return state
     

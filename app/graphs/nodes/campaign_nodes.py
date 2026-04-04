@@ -9,6 +9,7 @@ from app.db.models import CampaignRow, RowStatus
 from app.graphs.state import CampaignGraphState
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
+from app.services.progress_manager import progress_manager
 from app.services.schema_inference_service import SchemaInferenceService
 
 logger = get_logger(__name__)
@@ -45,6 +46,15 @@ class CampaignGraphNodes:
         """Profile CSV columns and types."""
         logger.info(f"Profiling CSV for campaign {state.campaign_id}")
         
+        # Emit progress
+        await progress_manager.update(
+            state.campaign_id,
+            status="processing",
+            message="Loading and profiling CSV data...",
+            stage="profiling",
+            percent_complete=5,
+        )
+        
         try:
             df = DataLoader.load_file(state.csv_path)
             profile = CSVProfiler.profile_csv(df)
@@ -64,6 +74,15 @@ class CampaignGraphNodes:
     async def infer_schema(self, state: CampaignGraphState) -> CampaignGraphState:
         """Infer CSV schema and semantics."""
         logger.info(f"Inferring schema for campaign {state.campaign_id}")
+        
+        # Emit progress
+        await progress_manager.update(
+            state.campaign_id,
+            status="processing",
+            message="Inferring schema from CSV data...",
+            stage="infer_schema",
+            percent_complete=10,
+        )
         
         try:
             # Load sample rows
@@ -87,6 +106,15 @@ class CampaignGraphNodes:
             state.inferred_schema = inference.model_dump()
             state.schema_confidence = inference.confidence
             
+            # Emit progress
+            await progress_manager.update(
+                state.campaign_id,
+                status="processing",
+                message=f"Schema inferred with {int(inference.confidence * 100)}% confidence",
+                stage="infer_schema",
+                percent_complete=20,
+            )
+            
             # Check if review needed
             if inference.confidence < 0.7 or inference.unresolved_questions:
                 state.status = "awaiting_schema_review"
@@ -104,6 +132,15 @@ class CampaignGraphNodes:
         """Generate campaign plan from schema."""
         logger.info(f"Generating campaign plan for {state.campaign_id}")
         
+        # Emit progress
+        await progress_manager.update(
+            state.campaign_id,
+            status="processing",
+            message="Generating campaign plan...",
+            stage="generate_plan",
+            percent_complete=30,
+        )
+        
         try:
             from app.schemas.csv_inference import CsvSchemaInference
             
@@ -118,6 +155,15 @@ class CampaignGraphNodes:
             
             state.campaign_plan = plan.model_dump()
             
+            # Emit progress
+            await progress_manager.update(
+                state.campaign_id,
+                status="processing",
+                message=f"Campaign plan generated: {plan.inferred_goal}",
+                stage="generate_plan",
+                percent_complete=40,
+            )
+            
         except Exception as e:
             logger.error(f"Failed to generate campaign plan: {e}")
             state.errors.append(f"Campaign plan error: {str(e)}")
@@ -127,6 +173,15 @@ class CampaignGraphNodes:
     async def generate_sample_drafts(self, state: CampaignGraphState) -> CampaignGraphState:
         """Generate sample drafts for review."""
         logger.info(f"Generating sample drafts for {state.campaign_id}")
+        
+        # Emit progress
+        await progress_manager.update(
+            state.campaign_id,
+            status="processing",
+            message="Generating sample email drafts...",
+            stage="generate_drafts",
+            percent_complete=50,
+        )
         
         try:
             from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
@@ -145,6 +200,15 @@ class CampaignGraphNodes:
             
             state.sample_drafts = [d.model_dump() for d in drafts]
             logger.info(f"Generated {len(drafts)} sample drafts")
+            
+            # Emit progress
+            await progress_manager.update(
+                state.campaign_id,
+                status="processing",
+                message=f"Generated {len(drafts)} sample drafts",
+                stage="generate_drafts",
+                percent_complete=60,
+            )
             
         except Exception as e:
             logger.error(f"Failed to generate sample drafts: {e}")
@@ -251,6 +315,17 @@ class CampaignGraphNodes:
             
             logger.info(f"Starting to process {len(df)} rows...")
             
+            # Emit initial progress
+            await progress_manager.update(
+                state.campaign_id,
+                status="processing",
+                message=f"Processing {len(df)} rows...",
+                stage="processing",
+                total_rows=len(df),
+                processed_rows=0,
+                current_row=None,
+            )
+            
             for idx in range(len(df)):
                 row_data = DataLoader.get_row_as_dict(df, idx)
                 
@@ -262,6 +337,18 @@ class CampaignGraphNodes:
                 if not recipient_email or recipient_email.lower() in ["nan", "null", "none", "", "n/a"]:
                     skipped_count += 1
                     continue
+                
+                # Emit progress every 10 rows
+                if created_count > 0 and created_count % 10 == 0:
+                    await progress_manager.update(
+                        state.campaign_id,
+                        status="processing",
+                        message=f"Processing row {idx + 1} of {len(df)}...",
+                        stage="processing",
+                        total_rows=len(df),
+                        processed_rows=created_count,
+                        current_row=idx + 1,
+                    )
                 
                 # Create recipient record FIRST (before draft generation)
                 # This ensures rows exist even if draft generation fails

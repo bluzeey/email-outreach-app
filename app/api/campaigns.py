@@ -1,5 +1,6 @@
 """Campaign API endpoints."""
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import List
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +43,7 @@ from app.schemas.recipient import (
 )
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
+from app.services.progress_manager import progress_manager
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -185,6 +188,16 @@ async def analyze_campaign(
         if not campaign.csv_storage_path:
             raise HTTPException(status_code=400, detail="No CSV uploaded")
         
+        # Start progress tracking
+        await progress_manager.update(
+            campaign_id,
+            status="starting",
+            message="Loading and profiling CSV...",
+            stage="loading",
+            total_rows=0,
+            processed_rows=0,
+        )
+        
         # Create a fresh session for graph operations to avoid SQLite locking
         async with AsyncSessionLocal() as graph_session:
             try:
@@ -208,8 +221,23 @@ async def analyze_campaign(
                 # Commit all graph operations
                 await graph_session.commit()
                 
+                # Mark as complete
+                await progress_manager.update(
+                    campaign_id,
+                    status="complete",
+                    message="Analysis complete!",
+                    stage="complete",
+                    percent_complete=100,
+                )
+                
             except Exception as e:
                 await graph_session.rollback()
+                await progress_manager.update(
+                    campaign_id,
+                    status="error",
+                    message=f"Error: {str(e)}",
+                    stage="error",
+                )
                 raise e
         
         # Update campaign status in the original session
@@ -232,6 +260,43 @@ async def analyze_campaign(
     except Exception as e:
         logger.error(f"Failed to analyze campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/{campaign_id}/progress-stream")
+async def progress_stream(campaign_id: str):
+    """Server-Sent Events endpoint for real-time progress updates."""
+    
+    async def event_generator():
+        # Register this campaign for progress tracking
+        queue = progress_manager.register(campaign_id)
+        
+        try:
+            while True:
+                # Wait for next event (with timeout to prevent connection from hanging)
+                try:
+                    event = await asyncio.wait_for(
+                        progress_manager.get_event(campaign_id),
+                        timeout=30.0
+                    )
+                    if event:
+                        yield f"data: {event}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive ping
+                    yield ":ping\n\n"
+                    
+        except Exception as e:
+            logger.error(f"SSE error for campaign {campaign_id}: {e}")
+        finally:
+            progress_manager.unregister(campaign_id)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @router.post("/{campaign_id}/approve", response_model=CampaignActionResponse)

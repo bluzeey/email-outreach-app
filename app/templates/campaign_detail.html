@@ -285,12 +285,109 @@
         }
         
         // Action handlers
+        let eventSource = null;
+        
+        function showAnalysisProgress() {
+            const section = document.getElementById('progress-section');
+            section.innerHTML = `
+                <div class="analysis-progress">
+                    <h3>🔍 Analyzing Campaign</h3>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div id="analysis-progress-fill" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                        <span id="analysis-progress-text">0%</span>
+                    </div>
+                    <p id="analysis-status">Initializing...</p>
+                    <p id="analysis-current-row" style="font-size: 0.875rem; color: #6b7280;"></p>
+                </div>
+            `;
+        }
+        
+        function updateAnalysisProgress(data) {
+            const fill = document.getElementById('analysis-progress-fill');
+            const text = document.getElementById('analysis-progress-text');
+            const status = document.getElementById('analysis-status');
+            const currentRow = document.getElementById('analysis-current-row');
+            
+            if (fill) {
+                fill.style.width = `${data.percent_complete || 0}%`;
+            }
+            if (text) {
+                text.textContent = `${data.percent_complete || 0}%`;
+            }
+            if (status) {
+                status.textContent = data.message || 'Processing...';
+            }
+            if (currentRow && data.current_row) {
+                currentRow.textContent = `Processing row ${data.current_row} of ${data.total_rows || '?'}`;
+            }
+        }
+        
+        function hideAnalysisProgress() {
+            const section = document.getElementById('progress-section');
+            section.innerHTML = '';
+        }
+        
+        function connectProgressStream(campaignId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource(`/api/campaigns/${campaignId}/progress-stream`);
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateAnalysisProgress(data);
+                    
+                    if (data.status === 'complete' || data.status === 'error') {
+                        eventSource.close();
+                        setTimeout(() => {
+                            hideAnalysisProgress();
+                            location.reload();
+                        }, 1000);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse progress data:', e);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                eventSource.close();
+            };
+        }
+        
         async function analyzeCampaign() {
+            // Show progress UI
+            showAnalysisProgress();
+            
+            // Connect to progress stream
+            connectProgressStream(campaignId);
+            
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/analyze`, { method: 'POST' });
                 const data = await response.json();
                 
                 if (response.ok) {
+                    // Progress stream will handle the UI updates
+                    console.log('Analysis complete:', data);
+                } else {
+                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
+                    if (eventSource) {
+                        eventSource.close();
+                    }
+                    hideAnalysisProgress();
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                if (eventSource) {
+                    eventSource.close();
+                }
+                hideAnalysisProgress();
+            }
+        }
                     alert(`Analysis complete! Inferred ${data.schema_inference.personalization_columns?.length || 0} personalization fields.`);
                     location.reload();
                 } else {
@@ -541,6 +638,52 @@
         }
         
         .errors-section li {
+            margin: 0.5rem 0;
+        }
+        
+        .analysis-progress {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        
+        .analysis-progress h3 {
+            margin-top: 0;
+            color: #1e40af;
+        }
+        
+        .progress-bar-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin: 1rem 0;
+        }
+        
+        .progress-bar {
+            flex: 1;
+            height: 12px;
+            background: #dbeafe;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #2563eb);
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+        
+        #analysis-progress-text {
+            font-weight: 600;
+            color: #1e40af;
+            min-width: 40px;
+        }
+        
+        #analysis-status {
+            color: #374151;
             margin: 0.5rem 0;
         }
         

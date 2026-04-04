@@ -483,9 +483,16 @@ class RecipientGraphNodes:
                 )
                 
             except Exception as e:
-                logger.error(f"[SEND] Gmail send failed with error: {type(e).__name__}: {str(e)}")
-                import traceback
-                logger.error(f"[SEND] Stack trace: {traceback.format_exc()}")
+                # Handle specific token decryption errors
+                from cryptography.fernet import InvalidToken
+                if isinstance(e, InvalidToken):
+                    logger.error(f"[SEND] Token decryption failed - encryption key may have changed. User needs to reconnect Gmail account.")
+                    error_msg = "Gmail authentication token is invalid. Please go to Settings and reconnect your Gmail account."
+                else:
+                    logger.error(f"[SEND] Gmail send failed with error: {type(e).__name__}: {str(e)}")
+                    import traceback
+                    logger.error(f"[SEND] Stack trace: {traceback.format_exc()}")
+                    error_msg = f"Failed to send: {str(e)}"
                 
                 # Record failure
                 send_event = await self.idempotency_service.record_send_attempt(
@@ -496,21 +503,21 @@ class RecipientGraphNodes:
                     subject=draft.subject,
                     body=draft.plain_text_body,
                     status=SendStatus.FAILED,
-                    error_message=str(e),
+                    error_message=error_msg,
                 )
                 
                 state.send_result = {
                     "success": False,
-                    "error": str(e),
+                    "error": error_msg,
                     "error_type": type(e).__name__,
                     "send_event_id": send_event.id,
                 }
                 state.status = "failed"
-                state.errors.append(f"Send failed: {str(e)}")
+                state.errors.append(f"Send failed: {error_msg}")
                 
                 # Update DB
                 campaign_row.status = RowStatus.FAILED
-                campaign_row.error_message = str(e)
+                campaign_row.error_message = error_msg
                 await self.session.commit()
         
         except Exception as e:

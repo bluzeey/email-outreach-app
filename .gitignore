@@ -9,6 +9,9 @@ ENV/
 .env.local
 .env.*.local
 
+# Encryption key (auto-generated)
+.encryption_key
+
 # Python cache
 __pycache__/
 *.py[cod]

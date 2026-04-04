@@ -2,6 +2,8 @@
 
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 import structlog
 
@@ -9,14 +11,34 @@ from app.core.config import settings
 
 
 def setup_logging():
-    """Setup structured logging."""
+    """Setup structured logging with file and console handlers."""
     
-    # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, settings.LOG_LEVEL.upper()),
+    # Define log file path
+    log_file = Path("app.log")
+    
+    # Create formatter for structured logs
+    json_formatter = logging.Formatter("%(message)s")
+    
+    # Setup file handler with rotation (10MB per file, keep 5 backups)
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=5,
+        encoding="utf-8",
     )
+    file_handler.setFormatter(json_formatter)
+    file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+    
+    # Setup console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(json_formatter)
+    console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
     
     # Configure structlog
     structlog.configure(

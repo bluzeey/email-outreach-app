@@ -787,9 +787,16 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         logger.info(f"[API_SEND] Email sent to {mask_sensitive_data(row.recipient_email or '', 3)}")
         
     except Exception as e:
-        logger.error(f"[API_SEND] Failed to send email: {type(e).__name__}: {str(e)}")
-        import traceback
-        logger.error(f"[API_SEND] Stack trace: {traceback.format_exc()}")
+        # Handle specific token decryption errors
+        from cryptography.fernet import InvalidToken
+        if isinstance(e, InvalidToken):
+            logger.error(f"[API_SEND] Token decryption failed - encryption key may have changed. User needs to reconnect Gmail account.")
+            error_msg = "Gmail authentication token is invalid. Please go to Settings and reconnect your Gmail account."
+        else:
+            logger.error(f"[API_SEND] Failed to send email: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"[API_SEND] Stack trace: {traceback.format_exc()}")
+            error_msg = f"Failed to send: {str(e)}"
         
         await idempotency_service.record_send_attempt(
             session=session,
@@ -799,11 +806,11 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
             subject=draft.subject,
             body=draft.plain_text_body,
             status=SendStatus.FAILED,
-            error_message=str(e),
+            error_message=error_msg,
         )
         
         row.status = RowStatus.FAILED
-        row.error_message = str(e)
+        row.error_message = error_msg
         await session.flush()
 
 

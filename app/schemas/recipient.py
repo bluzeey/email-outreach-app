@@ -48,6 +48,7 @@ class EmailDraftResponse(BaseModel):
     
     id: str
     campaign_row_id: str
+    to: str | None = None  # Recipient email
     subject: str
     plain_text_body: str
     html_body: str
@@ -57,3 +58,11 @@ class EmailDraftResponse(BaseModel):
     needs_human_review: bool = False
     review_reasons: list[str] = Field(default_factory=list)
     created_at: str | None = None
+
+
+class EmailDraftUpdateRequest(BaseModel):
+    """Request to update an email draft."""
+    
+    subject: str | None = None
+    plain_text_body: str | None = None
+    html_body: str | None = None

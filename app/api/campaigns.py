@@ -38,6 +38,7 @@ from app.schemas.campaign import (
 )
 from app.schemas.recipient import (
     EmailDraftResponse,
+    EmailDraftUpdateRequest,
     RecipientListResponse,
     RecipientRowResponse,
 )
@@ -919,6 +920,7 @@ async def get_recipient_draft(
         return EmailDraftResponse(
             id=draft.id,
             campaign_row_id=draft.campaign_row_id,
+            to=row.recipient_email,
             subject=draft.subject,
             plain_text_body=draft.plain_text_body,
             html_body=draft.html_body,
@@ -935,6 +937,76 @@ async def get_recipient_draft(
     except Exception as e:
         logger.error(f"Failed to get draft: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get draft: {str(e)}")
+
+
+@router.put("/{campaign_id}/rows/{row_id}/draft", response_model=EmailDraftResponse)
+async def update_recipient_draft(
+    campaign_id: str,
+    row_id: str,
+    request: EmailDraftUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update email draft for a specific recipient."""
+    try:
+        # Verify campaign exists
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Get the row
+        row = await session.get(CampaignRow, row_id)
+        if not row or row.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+        
+        # Get the draft
+        from sqlalchemy import select
+        from app.db.models import EmailDraft
+        
+        result = await session.execute(
+            select(EmailDraft).where(EmailDraft.campaign_row_id == row_id)
+        )
+        draft = result.scalar_one_or_none()
+        
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found for this recipient")
+        
+        # Update fields if provided
+        if request.subject is not None:
+            draft.subject = request.subject
+        if request.plain_text_body is not None:
+            draft.plain_text_body = request.plain_text_body
+        if request.html_body is not None:
+            draft.html_body = request.html_body
+        
+        # Mark as needing human review since it was manually edited
+        draft.needs_human_review = True
+        draft.review_reasons = draft.review_reasons or []
+        if "Manually edited by user" not in draft.review_reasons:
+            draft.review_reasons.append("Manually edited by user")
+        
+        await session.commit()
+        await session.refresh(draft)
+        
+        return EmailDraftResponse(
+            id=draft.id,
+            campaign_row_id=draft.campaign_row_id,
+            to=row.recipient_email,
+            subject=draft.subject,
+            plain_text_body=draft.plain_text_body,
+            html_body=draft.html_body,
+            personalization_fields_used=draft.personalization_fields_used or [],
+            key_claims_used=draft.key_claims_used or [],
+            generation_confidence=draft.generation_confidence,
+            needs_human_review=draft.needs_human_review,
+            review_reasons=draft.review_reasons or [],
+            created_at=draft.created_at.isoformat() if draft.created_at else None,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update draft: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update draft: {str(e)}")
 
 
 @router.get("/{campaign_id}/export", response_model=CampaignExportResponse)

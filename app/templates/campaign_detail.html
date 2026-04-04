@@ -233,10 +233,18 @@
             }
         }
         
-        async function loadRows(expectedCount) {
+        let currentPage = 1;
+        const pageSize = 10;
+        let totalRows = 0;
+        
+        async function loadRows(expectedCount, page = 1) {
             try {
-                const response = await fetch(`/api/campaigns/${campaignId}/rows?page=1&page_size=10`);
+                currentPage = page;
+                const response = await fetch(`/api/campaigns/${campaignId}/rows?page=${page}&page_size=${pageSize}`);
                 const data = await response.json();
+                
+                totalRows = data.total;
+                const totalPages = Math.ceil(totalRows / pageSize);
                 
                 const section = document.getElementById('rows-section');
                 
@@ -274,7 +282,7 @@
                                     <td>${r.recipient_email || 'N/A'}</td>
                                     <td><span class="status-badge status-${r.status}">${r.status}</span></td>
                                     <td>
-                                        <button onclick="previewDraft('${r.id}')" class="btn btn-small btn-icon" title="Preview Email">👁️</button>
+                                        <button onclick="previewDraft('${r.id}')" class="btn btn-small btn-icon" title="Preview/Edit Email">👁️</button>
                                         ${r.status === 'awaiting_review' ? `
                                             <button onclick="approveRow('${r.id}')" class="btn btn-small">Approve</button>
                                             <button onclick="rejectRow('${r.id}')" class="btn btn-small">Reject</button>
@@ -284,6 +292,7 @@
                             `).join('')}
                         </tbody>
                     </table>
+                    ${renderPagination(page, totalPages, data.total)}
                 `;
             } catch (error) {
                 document.getElementById('rows-section').innerHTML = `
@@ -532,8 +541,54 @@
             }
         }
         
+        function renderPagination(currentPage, totalPages, total) {
+            if (totalPages <= 1) return '';
+            
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, total);
+            
+            let buttons = '';
+            
+            // Previous button
+            if (currentPage > 1) {
+                buttons += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">← Previous</button>`;
+            }
+            
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === currentPage) {
+                    buttons += `<button class="btn btn-small btn-active" disabled>${i}</button>`;
+                } else if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    buttons += `<button onclick="changePage(${i})" class="btn btn-small">${i}</button>`;
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    buttons += `<span class="pagination-ellipsis">...</span>`;
+                }
+            }
+            
+            // Next button
+            if (currentPage < totalPages) {
+                buttons += `<button onclick="changePage(${currentPage + 1})" class="btn btn-small">Next →</button>`;
+            }
+            
+            return `
+                <div class="pagination">
+                    <div class="pagination-info">Showing ${startItem}-${endItem} of ${total}</div>
+                    <div class="pagination-buttons">${buttons}</div>
+                </div>
+            `;
+        }
+        
+        function changePage(page) {
+            loadRows(totalRows, page);
+        }
+        
+        // Store draft data for editing
+        let currentDraftData = null;
+        let currentRowId = null;
+        
         async function previewDraft(rowId) {
             try {
+                currentRowId = rowId;
                 const response = await fetch(`/api/campaigns/${campaignId}/rows/${rowId}/draft`);
                 const draft = await response.json();
                 
@@ -541,21 +596,41 @@
                     throw new Error(draft.detail || 'Failed to load draft');
                 }
                 
-                // Create modal content
+                currentDraftData = draft;
+                
+                // Create modal content with view mode by default
                 const modalHtml = `
                     <div id="draft-modal" class="modal">
                         <div class="modal-content">
                             <span class="close" onclick="closeModal()">&times;</span>
                             <h3>📧 Email Preview</h3>
-                            <div class="draft-preview">
+                            <div id="draft-view-mode" class="draft-preview">
                                 <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
-                                <p><strong>Subject:</strong> ${draft.subject}</p>
+                                <p><strong>Subject:</strong> <span id="view-subject">${escapeHtml(draft.subject)}</span></p>
                                 <hr>
                                 <div class="email-body">
-                                    <pre>${draft.plain_text_body}</pre>
+                                    <p><strong>Email Body:</strong></p>
+                                    <pre id="view-body">${escapeHtml(draft.plain_text_body)}</pre>
                                 </div>
                                 ${draft.needs_human_review ? `<p class="warning">⚠️ ${draft.review_reasons?.join(', ') || 'Needs review'}</p>` : ''}
                                 <p class="confidence">Confidence: ${draft.generation_confidence}%</p>
+                                <div class="modal-actions">
+                                    <button onclick="switchToEditMode()" class="btn btn-primary">✏️ Edit</button>
+                                    <button onclick="closeModal()" class="btn btn-secondary">Close</button>
+                                </div>
+                            </div>
+                            <div id="draft-edit-mode" class="draft-preview" style="display: none;">
+                                <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
+                                <p><strong>Subject:</strong> <input type="text" id="edit-subject" value="${escapeHtml(draft.subject)}" class="form-input" style="width: 100%;"></p>
+                                <hr>
+                                <div class="email-body">
+                                    <p><strong>Email Body:</strong></p>
+                                    <textarea id="edit-body" class="form-textarea" rows="15" style="width: 100%; font-family: inherit;">${escapeHtml(draft.plain_text_body)}</textarea>
+                                </div>
+                                <div class="modal-actions">
+                                    <button onclick="saveDraft()" class="btn btn-primary">💾 Save</button>
+                                    <button onclick="switchToViewMode()" class="btn btn-secondary">Cancel</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -575,6 +650,74 @@
                 
             } catch (error) {
                 alert('Failed to load draft: ' + error.message);
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+        
+        function switchToEditMode() {
+            document.getElementById('draft-view-mode').style.display = 'none';
+            document.getElementById('draft-edit-mode').style.display = 'block';
+        }
+        
+        function switchToViewMode() {
+            document.getElementById('draft-edit-mode').style.display = 'none';
+            document.getElementById('draft-view-mode').style.display = 'block';
+        }
+        
+        async function saveDraft() {
+            if (!currentRowId) return;
+            
+            const subject = document.getElementById('edit-subject').value;
+            const body = document.getElementById('edit-body').value;
+            
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${currentRowId}/draft`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subject: subject,
+                        plain_text_body: body
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to save draft');
+                }
+                
+                // Update the view with new data
+                document.getElementById('view-subject').textContent = data.subject;
+                document.getElementById('view-body').textContent = data.plain_text_body;
+                
+                // Show warning if not already present
+                if (data.needs_human_review) {
+                    const warningEl = document.querySelector('.warning');
+                    if (!warningEl) {
+                        const confidenceEl = document.querySelector('.confidence');
+                        if (confidenceEl) {
+                            confidenceEl.insertAdjacentHTML('beforebegin', `<p class="warning">⚠️ ${data.review_reasons?.join(', ') || 'Needs review'}</p>`);
+                        }
+                    }
+                }
+                
+                // Switch back to view mode
+                switchToViewMode();
+                
+                // Refresh the rows list to show updated status
+                loadRows(totalRows, currentPage);
+                
+            } catch (error) {
+                alert('Failed to save draft: ' + error.message);
             }
         }
         
@@ -870,6 +1013,63 @@
             color: #6b7280;
             font-size: 0.875rem;
             margin-top: 1rem;
+        }
+        
+        /* Pagination styles */
+        .pagination {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .pagination-info {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+        
+        .pagination-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .pagination-ellipsis {
+            color: #6b7280;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .btn-active {
+            background: #2563eb;
+            color: white;
+        }
+        
+        /* Form styles for edit mode */
+        .form-input, .form-textarea {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+            justify-content: flex-end;
+            padding-top: 1rem;
+            border-top: 1px solid #e5e7eb;
         }
     </style>
 </body>

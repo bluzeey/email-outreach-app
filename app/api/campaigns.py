@@ -412,6 +412,23 @@ async def approve_campaign(
         if campaign.status not in [CampaignStatus.AWAITING_CAMPAIGN_APPROVAL, CampaignStatus.AWAITING_SCHEMA_REVIEW]:
             raise HTTPException(status_code=400, detail=f"Campaign cannot be approved in status: {campaign.status.value}")
         
+        # If campaign has no Gmail account associated, try to find and use the default one
+        if not campaign.gmail_account_id:
+            result = await session.execute(
+                select(GmailAccount).where(GmailAccount.status == "active")
+            )
+            gmail_account = result.scalar_one_or_none()
+            
+            if not gmail_account:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No Gmail account connected. Please connect a Gmail account first."
+                )
+            
+            # Associate the Gmail account with the campaign
+            campaign.gmail_account_id = gmail_account.id
+            logger.info(f"[APPROVE] Auto-associated Gmail account {gmail_account.email} with campaign {campaign_id}")
+        
         # Update campaign status to RUNNING
         campaign.status = CampaignStatus.RUNNING
         await session.commit()
@@ -452,13 +469,23 @@ async def approve_campaign(
         )
         total_rows = len(total_result.scalars().all())
         
-        if processed + failed >= total_rows:
+        # Count actual sent and skipped (not failed)
+        successful_rows = sum(1 for r in pending_rows if r.status == RowStatus.SENT)
+        skipped_rows = sum(1 for r in pending_rows if r.status == RowStatus.SKIPPED)
+        
+        # Only mark COMPLETED when all rows are successfully sent or skipped
+        # If there are failures, keep campaign as RUNNING so user can retry
+        if successful_rows + skipped_rows >= total_rows:
             campaign.status = CampaignStatus.COMPLETED
+            await session.commit()
+        elif failed > 0:
+            # Keep as RUNNING if there are failures (allows retry)
+            campaign.status = CampaignStatus.RUNNING
             await session.commit()
         
         return CampaignActionResponse(
             success=True,
-            message=f"Campaign approved! Processed {processed} recipients ({failed} failed).",
+            message=f"Campaign approved! Processed {processed} recipients ({failed} failed, {successful_rows} sent).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )
@@ -559,13 +586,22 @@ async def run_campaign(
         )
         total_rows = len(total_result.scalars().all())
         
-        if processed + failed >= total_rows:
+        # Count successful (not failed) rows
+        successful = processed - failed
+        
+        # Only mark COMPLETED when all rows are successfully processed (no failures)
+        # If there are failures, keep campaign as RUNNING so user can retry
+        if successful >= total_rows:
             campaign.status = CampaignStatus.COMPLETED
+            await session.commit()
+        elif failed > 0:
+            # Keep as RUNNING if there are failures (allows retry)
+            campaign.status = CampaignStatus.RUNNING
             await session.commit()
         
         return CampaignActionResponse(
             success=True,
-            message=f"Campaign running. Processed {processed} rows ({failed} failed).",
+            message=f"Campaign running. Processed {processed} rows ({failed} failed, {successful} successful).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )
@@ -638,8 +674,7 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     from app.db.models import EmailDraft, GmailAccount, SendEvent, SendStatus
     from app.services.gmail_client import GmailClient
     from app.services.idempotency_service import IdempotencyService
-    from app.core.security import decrypt_token, generate_idempotency_key
-    from app.core.logging import mask_sensitive_data
+    from app.core.security import decrypt_token, generate_idempotency_key, mask_sensitive_data
     import json
     
     logger.info(f"[API_SEND] Starting send for row {row.id}, email: {mask_sensitive_data(row.recipient_email or '', 3)}")

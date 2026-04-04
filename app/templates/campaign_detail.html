@@ -277,6 +277,9 @@
                 
                 const container = document.getElementById('campaign-details');
                 
+                // Store campaign data globally for access by other functions
+                window.currentCampaign = campaign;
+                
                 container.innerHTML = `
                     <div class="campaign-header">
                         <div class="campaign-title">
@@ -340,8 +343,16 @@
             return status.replace(/_/g, ' ');
         }
         
+        // Global variable to track if there are failed emails
+        let hasFailedEmails = false;
+        
         function getActionButtons(campaign) {
             const buttons = [];
+            
+            // Show retry button if campaign is running and we know there are failures
+            if (campaign.status === 'running' && hasFailedEmails) {
+                buttons.push(`<button onclick="retryAllFailed()" class="btn btn-warning">🔄 Retry Failed</button>`);
+            }
             
             if (['created', 'profiling'].includes(campaign.status) && campaign.csv_filename) {
                 if (campaign.totals_json?.total_rows > 0) {
@@ -518,6 +529,17 @@
                 const section = document.getElementById('progress-section');
                 if (!section) return;
                 
+                // Track if there are failed emails
+                hasFailedEmails = progress.failed_count > 0;
+                
+                // Update status badge if campaign is running with failures
+                const statusBadge = document.querySelector('.status-badge');
+                if (statusBadge && progress.failed_count > 0 && window.currentCampaign?.status === 'running') {
+                    statusBadge.style.background = '#fef3c7';
+                    statusBadge.style.color = '#92400e';
+                    statusBadge.textContent = 'running (needs retry)';
+                }
+                
                 section.innerHTML = `
                     <div class="section-card">
                         <h3>📈 Campaign Progress</h3>
@@ -528,6 +550,11 @@
                             <span>${progress.percentage_complete}% complete</span>
                             <span>${progress.sent_count} sent · ${progress.failed_count} failed · ${progress.skipped_count} skipped</span>
                         </div>
+                        ${progress.failed_count > 0 ? `
+                            <div style="margin-top: 1rem; text-align: right;">
+                                <button onclick="retryAllFailed()" class="btn btn-small btn-warning">🔄 Retry All Failed (${progress.failed_count})</button>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             } catch (error) {
@@ -626,6 +653,9 @@
                                             ${r.status === 'awaiting_review' ? `
                                                 <button onclick="approveRow('${r.id}')" class="btn btn-small btn-success">✓</button>
                                                 <button onclick="rejectRow('${r.id}')" class="btn btn-small btn-danger">✗</button>
+                                            ` : ''}
+                                            ${r.status === 'failed' ? `
+                                                <button onclick="retryRow('${r.id}')" class="btn btn-small btn-warning" title="Retry sending">🔄 Retry</button>
                                             ` : ''}
                                         </td>
                                     </tr>
@@ -874,6 +904,78 @@
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+            }
+        }
+        
+        async function retryRow(rowId) {
+            if (!confirm('Retry sending email for this recipient?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${rowId}/retry`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    alert('Email sent successfully!');
+                    loadRows(totalRows, currentPage);
+                    loadProgress();
+                } else {
+                    alert('Retry failed: ' + (data.message || data.detail || 'Unknown error'));
+                    loadRows(totalRows, currentPage);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function retryAllFailed() {
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows?page=1&page_size=100`);
+                const data = await response.json();
+                
+                const failedRows = data.rows.filter(r => r.status === 'failed');
+                
+                if (failedRows.length === 0) {
+                    alert('No failed rows to retry.');
+                    return;
+                }
+                
+                if (!confirm(`Retry sending emails to ${failedRows.length} failed recipients?`)) {
+                    return;
+                }
+                
+                let successCount = 0;
+                let failCount = 0;
+                
+                for (const row of failedRows) {
+                    try {
+                        const retryResponse = await fetch(`/api/campaigns/${campaignId}/rows/${row.id}/retry`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        const retryData = await retryResponse.json();
+                        
+                        if (retryResponse.ok && retryData.success) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (e) {
+                        failCount++;
+                    }
+                }
+                
+                alert(`Retry complete: ${successCount} sent successfully, ${failCount} still failed.`);
+                loadRows(totalRows, currentPage);
+                loadProgress();
+            } catch (error) {
+                alert('Error retrying failed rows: ' + error.message);
             }
         }
         

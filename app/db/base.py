@@ -20,6 +20,7 @@ if is_sqlite:
     # These settings help with concurrent access
     connect_args = {
         "check_same_thread": False,
+        "timeout": 30.0,  # Wait up to 30 seconds for locks
     }
 
 engine = create_async_engine(
@@ -27,6 +28,8 @@ engine = create_async_engine(
     echo=False,
     future=True,
     connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 AsyncSessionLocal = sessionmaker(

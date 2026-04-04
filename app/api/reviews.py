@@ -237,3 +237,92 @@ async def regenerate_row_draft(
     except Exception as e:
         logger.error(f"Failed to regenerate row: {e}")
         raise HTTPException(status_code=500, detail=f"Regeneration failed: {str(e)}")
+
+
+@router.post("/{campaign_id}/rows/{row_id}/retry")
+async def retry_failed_row(
+    campaign_id: str,
+    row_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retry sending for a failed row."""
+    try:
+        from app.api.campaigns import _send_recipient_email
+        from app.db.models import GmailAccount
+        
+        row = await session.get(CampaignRow, row_id)
+        if not row or row.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Row not found")
+        
+        # Only allow retry for failed rows
+        if row.status != RowStatus.FAILED:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot retry row with status: {row.status.value}. Only failed rows can be retried."
+            )
+        
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # If campaign has no Gmail account associated, try to find and use the default one
+        if not campaign.gmail_account_id:
+            result = await session.execute(
+                select(GmailAccount).where(GmailAccount.status == "active")
+            )
+            gmail_account = result.scalar_one_or_none()
+            
+            if not gmail_account:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No Gmail account connected. Please connect a Gmail account first."
+                )
+            
+            # Associate the Gmail account with the campaign
+            campaign.gmail_account_id = gmail_account.id
+            logger.info(f"[RETRY] Auto-associated Gmail account {gmail_account.email} with campaign {campaign_id}")
+        
+        # Clear previous error
+        row.error_message = None
+        
+        # Reset to GENERATED status so it can be sent again
+        row.status = RowStatus.GENERATED
+        await session.commit()
+        
+        logger.info(f"[RETRY] Retrying failed row {row_id} for campaign {campaign_id}")
+        
+        # Attempt to send the email again
+        try:
+            await _send_recipient_email(session, campaign, row)
+            
+            # If successful, row status should be SENT
+            if row.status == RowStatus.SENT:
+                logger.info(f"[RETRY] Successfully sent email to row {row_id}")
+                return {
+                    "success": True,
+                    "row_id": row_id,
+                    "message": "Email sent successfully",
+                    "new_status": row.status.value,
+                }
+            else:
+                # If still failed, return current status
+                return {
+                    "success": False,
+                    "row_id": row_id,
+                    "message": row.error_message or "Send failed",
+                    "new_status": row.status.value,
+                }
+                
+        except Exception as e:
+            logger.error(f"[RETRY] Failed to resend row {row_id}: {e}")
+            row.status = RowStatus.FAILED
+            row.error_message = str(e)
+            await session.commit()
+            
+            raise HTTPException(status_code=500, detail=f"Retry failed: {str(e)}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[RETRY] Error retrying row {row_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Retry failed: {str(e)}")

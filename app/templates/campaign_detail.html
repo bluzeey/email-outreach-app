@@ -101,7 +101,13 @@
             
             if (['created', 'profiling'].includes(campaign.status)) {
                 if (campaign.csv_filename) {
-                    buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">Analyze</button>`);
+                    // Check if we have partial data (interrupted analysis)
+                    if (campaign.totals_json && campaign.totals_json.total_rows > 0) {
+                        buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔄 Resume Analysis</button>`);
+                        buttons.push(`<button onclick="analyzeCampaign(true)" class="btn btn-secondary">Restart</button>`);
+                    } else {
+                        buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔍 Analyze</button>`);
+                    }
                 }
             }
             
@@ -117,6 +123,9 @@
             if (campaign.status === 'running') {
                 buttons.push(`<button onclick="pauseCampaign()" class="btn btn-secondary">Pause</button>`);
             }
+            
+            // Add delete button (always available but styled as danger)
+            buttons.push(`<button onclick="deleteCampaign()" class="btn btn-danger">🗑️ Delete</button>`);
             
             buttons.push(`<button onclick="exportCampaign()" class="btn btn-secondary">Export</button>`);
             
@@ -359,7 +368,7 @@
             };
         }
         
-        async function analyzeCampaign() {
+        async function analyzeCampaign(forceRestart = false) {
             // Show progress UI
             showAnalysisProgress();
             
@@ -367,12 +376,16 @@
             connectProgressStream(campaignId);
             
             try {
-                const response = await fetch(`/api/campaigns/${campaignId}/analyze`, { method: 'POST' });
+                const url = `/api/campaigns/${campaignId}/analyze` + (forceRestart ? '?force_restart=true' : '');
+                const response = await fetch(url, { method: 'POST' });
                 const data = await response.json();
                 
                 if (response.ok) {
                     // Progress stream will handle the UI updates
                     console.log('Analysis complete:', data);
+                    if (forceRestart) {
+                        alert(`Analysis restarted! Inferred ${data.schema_inference.personalization_columns?.length || 0} personalization fields.`);
+                    }
                 } else {
                     alert('Analysis failed: ' + (data.detail || 'Unknown error'));
                     if (eventSource) {
@@ -388,10 +401,21 @@
                 hideAnalysisProgress();
             }
         }
-                    alert(`Analysis complete! Inferred ${data.schema_inference.personalization_columns?.length || 0} personalization fields.`);
-                    location.reload();
+        
+        async function deleteCampaign() {
+            if (!confirm('Are you sure you want to delete this campaign? All data will be permanently removed.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Campaign deleted successfully');
+                    window.location.href = '/campaigns';
                 } else {
-                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
+                    alert('Delete failed: ' + data.message);
                 }
             } catch (error) {
                 alert('Error: ' + error.message);

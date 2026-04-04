@@ -177,9 +177,14 @@ async def upload_csv(
 @router.post("/{campaign_id}/analyze", response_model=CampaignAnalyzeResponse)
 async def analyze_campaign(
     campaign_id: str,
+    force_restart: bool = False,  # Optional param to restart from scratch
     session: AsyncSession = Depends(get_session),
 ):
-    """Analyze campaign CSV and generate schema/plan."""
+    """Analyze campaign CSV and generate schema/plan.
+    
+    Supports resuming from checkpoint if analysis was interrupted.
+    Set force_restart=True to start fresh and delete existing progress.
+    """
     try:
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
@@ -188,15 +193,39 @@ async def analyze_campaign(
         if not campaign.csv_storage_path:
             raise HTTPException(status_code=400, detail="No CSV uploaded")
         
-        # Start progress tracking
-        await progress_manager.update(
-            campaign_id,
-            status="starting",
-            message="Loading and profiling CSV...",
-            stage="loading",
-            total_rows=0,
-            processed_rows=0,
+        # Check for existing recipient rows
+        existing_rows_result = await session.execute(
+            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
         )
+        existing_rows = existing_rows_result.scalars().all()
+        
+        if existing_rows and force_restart:
+            # Delete existing rows if force restart
+            logger.info(f"Force restart requested, deleting {len(existing_rows)} existing rows")
+            for row in existing_rows:
+                await session.delete(row)
+            await session.commit()
+            existing_rows = []
+        
+        # Start progress tracking
+        if existing_rows:
+            await progress_manager.update(
+                campaign_id,
+                status="resuming",
+                message=f"Resuming analysis with {len(existing_rows)} existing recipients...",
+                stage="resuming",
+                total_rows=0,
+                processed_rows=len(existing_rows),
+            )
+        else:
+            await progress_manager.update(
+                campaign_id,
+                status="starting",
+                message="Loading and profiling CSV...",
+                stage="loading",
+                total_rows=0,
+                processed_rows=0,
+            )
         
         # Create a fresh session for graph operations to avoid SQLite locking
         async with AsyncSessionLocal() as graph_session:
@@ -205,6 +234,7 @@ async def analyze_campaign(
                 graph = create_campaign_graph(graph_session)
                 thread_id = get_campaign_thread_id(campaign_id)
                 
+                # Build initial state
                 initial_state = CampaignGraphState(
                     campaign_id=campaign_id,
                     context=campaign.context or "",
@@ -212,23 +242,52 @@ async def analyze_campaign(
                     dry_run=campaign.dry_run,
                 )
                 
-                # Run graph up to plan generation
-                result = await graph.ainvoke(
-                    initial_state,
-                    config={"configurable": {"thread_id": thread_id}},
-                )
-                
-                # Commit all graph operations
-                await graph_session.commit()
-                
-                # Mark as complete
-                await progress_manager.update(
-                    campaign_id,
-                    status="complete",
-                    message="Analysis complete!",
-                    stage="complete",
-                    percent_complete=100,
-                )
+                # If we have existing rows and not force restart, 
+                # we'll skip to await_approval status
+                if existing_rows and not force_restart:
+                    logger.info(f"Resuming campaign {campaign_id} with {len(existing_rows)} existing rows")
+                    
+                    # Set up state as if we completed prepare_recipients
+                    initial_state.inferred_schema = campaign.inferred_schema_json or {}
+                    initial_state.campaign_plan = campaign.campaign_plan_json or {}
+                    initial_state.sample_drafts = campaign.sample_drafts_json or []
+                    initial_state.row_ids = [row.id for row in existing_rows]
+                    initial_state.totals = campaign.totals_json or {
+                        "total_rows": len(existing_rows),
+                        "processed": 0,
+                        "sent": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                    }
+                    initial_state.status = "awaiting_campaign_approval"
+                    
+                    await progress_manager.update(
+                        campaign_id,
+                        status="complete",
+                        message=f"Resumed with {len(existing_rows)} recipients - analysis complete!",
+                        stage="complete",
+                        percent_complete=100,
+                    )
+                    
+                    result = initial_state.model_dump()
+                else:
+                    # Fresh start - run full graph
+                    result = await graph.ainvoke(
+                        initial_state,
+                        config={"configurable": {"thread_id": thread_id}},
+                    )
+                    
+                    # Commit all graph operations
+                    await graph_session.commit()
+                    
+                    # Mark as complete
+                    await progress_manager.update(
+                        campaign_id,
+                        status="complete",
+                        message="Analysis complete!",
+                        stage="complete",
+                        percent_complete=100,
+                    )
                 
             except Exception as e:
                 await graph_session.rollback()
@@ -246,6 +305,14 @@ async def analyze_campaign(
         campaign.campaign_plan_json = result.get("campaign_plan", {})
         campaign.sample_drafts_json = result.get("sample_drafts", [])
         campaign.totals_json = result.get("totals", {})
+        
+        # Clear recovery error messages if present
+        if campaign.errors:
+            campaign.errors = [
+                e for e in campaign.errors 
+                if "Analysis was interrupted" not in e
+            ]
+        
         await session.commit()
         
         return CampaignAnalyzeResponse(
@@ -676,6 +743,42 @@ async def cancel_campaign(
     except Exception as e:
         logger.error(f"Failed to cancel campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Cancel failed: {str(e)}")
+
+
+@router.delete("/{campaign_id}", response_model=CampaignActionResponse)
+async def delete_campaign(
+    campaign_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete campaign and all associated data."""
+    try:
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Delete all campaign rows first (cascade should handle this, but be explicit)
+        await session.execute(
+            CampaignRow.__table__.delete().where(CampaignRow.campaign_id == campaign_id)
+        )
+        
+        # Delete the campaign
+        await session.delete(campaign)
+        await session.commit()
+        
+        logger.info(f"Deleted campaign {campaign_id}")
+        
+        return CampaignActionResponse(
+            success=True,
+            message="Campaign deleted successfully",
+            campaign_id=campaign_id,
+            new_status="deleted",
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete campaign: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)

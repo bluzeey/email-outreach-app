@@ -7,14 +7,63 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 
-from app.api import auth, campaigns, reviews, pages
+from app.api import auth, campaigns, pages, reviews
 from app.core.config import settings
-from app.core.logging import setup_logging
-from app.db.base import init_db
+from app.core.logging import get_logger, setup_logging
+from app.db.base import AsyncSessionLocal, init_db
+from app.db.models import Campaign, CampaignStatus
 
 # Setup logging
 setup_logging()
+logger = get_logger(__name__)
+
+
+async def recover_interrupted_campaigns():
+    """Recover campaigns that were interrupted during analysis.
+    
+    Campaigns stuck in PROFILING state are likely interrupted.
+    We'll keep their partial progress and mark them as resumable.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            # Find campaigns stuck in PROFILING state
+            result = await session.execute(
+                select(Campaign).where(Campaign.status == CampaignStatus.PROFILING)
+            )
+            interrupted = result.scalars().all()
+            
+            for campaign in interrupted:
+                logger.warning(
+                    f"Recovering interrupted campaign {campaign.id} from PROFILING state",
+                    campaign_id=campaign.id,
+                    name=campaign.name,
+                )
+                
+                # Keep status as PROFILING but mark with error message
+                # This allows the analyze endpoint to resume from checkpoint
+                if not campaign.errors:
+                    campaign.errors = []
+                
+                # Add recovery message
+                recovery_msg = "Analysis was interrupted. You can resume by clicking 'Resume Analysis'."
+                if recovery_msg not in campaign.errors:
+                    campaign.errors.append(recovery_msg)
+                
+                logger.info(
+                    f"Campaign {campaign.id} marked for resume",
+                    campaign_id=campaign.id,
+                )
+            
+            await session.commit()
+            
+            if interrupted:
+                logger.info(f"Recovered {len(interrupted)} interrupted campaigns")
+                
+        except Exception as e:
+            logger.error(f"Failed to recover interrupted campaigns: {e}")
+            await session.rollback()
 
 
 @asynccontextmanager
@@ -25,6 +74,9 @@ async def lifespan(app: FastAPI):
     
     # Ensure upload directory exists
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    
+    # Recover interrupted campaigns
+    await recover_interrupted_campaigns()
     
     yield
     

@@ -113,6 +113,15 @@ h3 {
     background: #d1d5db;
 }
 
+.btn-danger {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
 .btn-small {
     padding: 0.25rem 0.5rem;
     font-size: 0.875rem;

@@ -473,6 +473,45 @@ async def approve_campaign(
             campaign.gmail_account_id = gmail_account.id
             logger.info(f"[APPROVE] Auto-associated Gmail account {gmail_account.email} with campaign {campaign_id}")
         
+        # Get the Gmail account
+        gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
+        if not gmail_account:
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail account not found. Please reconnect your Gmail account."
+            )
+        
+        # FAIL-FAST: Validate Gmail credentials before processing any rows
+        if not gmail_account.token_encrypted:
+            raise HTTPException(
+                status_code=401,
+                detail="Gmail authentication token not found. Please go to Settings and reconnect your Gmail account."
+            )
+        
+        # Validate token can be decrypted and parsed
+        from app.core.security import parse_gmail_credentials, validate_gmail_token
+        try:
+            credentials_dict = parse_gmail_credentials(
+                gmail_account.token_encrypted,
+                gmail_account.refresh_token_encrypted
+            )
+            if not validate_gmail_token(credentials_dict):
+                raise ValueError("Invalid credentials structure")
+            
+            # Test that we can create a Gmail client
+            from app.services.gmail_client import GmailClient
+            test_client = GmailClient(credentials_dict)
+            logger.info(f"[APPROVE] Gmail credentials validated successfully for {gmail_account.email}")
+        except Exception as e:
+            logger.error(f"[APPROVE] Gmail token validation failed: {e}")
+            # Auto-disconnect the corrupted account
+            gmail_account.status = "disconnected"
+            await session.commit()
+            raise HTTPException(
+                status_code=401,
+                detail="Gmail authentication token is corrupted or expired. Please go to Settings and reconnect your Gmail account."
+            ) from e
+        
         # Update campaign status to RUNNING
         campaign.status = CampaignStatus.RUNNING
         await session.commit()
@@ -718,8 +757,7 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     from app.db.models import EmailDraft, GmailAccount, SendEvent, SendStatus
     from app.services.gmail_client import GmailClient
     from app.services.idempotency_service import IdempotencyService
-    from app.core.security import decrypt_token, generate_idempotency_key, mask_sensitive_data
-    import json
+    from app.core.security import parse_gmail_credentials, validate_gmail_token, mask_sensitive_data
     
     logger.info(f"[API_SEND] Starting send for row {row.id}, email: {mask_sensitive_data(row.recipient_email or '', 3)}")
     
@@ -791,25 +829,35 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     # Actually send
     error_msg = None
     try:
-        logger.info(f"[API_SEND] Decrypting token for {gmail_account.email}")
+        logger.info(f"[API_SEND] Parsing credentials for {gmail_account.email}")
         
         if not gmail_account.token_encrypted:
             raise ValueError("Gmail token not found. Please reconnect your Gmail account.")
         
-        # Decrypt and parse token
+        # Parse credentials using the new helper (handles both JSON and legacy formats)
         try:
-            decrypted = decrypt_token(gmail_account.token_encrypted)
-            token_data = json.loads(decrypted)
-        except json.JSONDecodeError as e:
-            logger.error(f"[API_SEND] Token decryption produced invalid JSON - encryption key mismatch or corrupted token")
+            credentials_dict = parse_gmail_credentials(
+                gmail_account.token_encrypted,
+                gmail_account.refresh_token_encrypted
+            )
+            if not validate_gmail_token(credentials_dict):
+                raise ValueError("Invalid credentials structure")
+        except ValueError as e:
+            logger.error(f"[API_SEND] Token parsing failed: {e}")
+            # Auto-disconnect the corrupted account
+            gmail_account.status = "disconnected"
+            await session.flush()
             raise ValueError("Gmail authentication token is corrupted. Please go to Settings and reconnect your Gmail account.") from e
         except Exception as e:
             logger.error(f"[API_SEND] Token decryption failed: {type(e).__name__}: {str(e)}")
+            # Auto-disconnect the corrupted account
+            gmail_account.status = "disconnected"
+            await session.flush()
             raise ValueError("Failed to decrypt Gmail token. Please go to Settings and reconnect your Gmail account.") from e
         
-        logger.info(f"[API_SEND] Token decrypted, creating Gmail client...")
+        logger.info(f"[API_SEND] Credentials parsed successfully, creating Gmail client...")
         
-        client = GmailClient(token_data)
+        client = GmailClient(credentials_dict)
         
         logger.info(f"[API_SEND] Sending email via Gmail API...")
         logger.info(f"[API_SEND]   From: {gmail_account.email}")

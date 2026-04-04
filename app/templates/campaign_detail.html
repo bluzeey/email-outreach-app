@@ -804,7 +804,13 @@
                 if (data.success) {
                     location.reload();
                 } else {
-                    alert('Approval failed: ' + data.message);
+                    // Check for auth errors (401) and redirect to auth page
+                    if (response.status === 401 || (data.detail && data.detail.includes('Gmail'))) {
+                        alert('Gmail authentication required: ' + (data.detail || 'Please reconnect your Gmail account.'));
+                        window.location.href = '/auth?error=gmail_auth_required';
+                    } else {
+                        alert('Approval failed: ' + (data.detail || data.message || 'Unknown error'));
+                    }
                 }
             } catch (error) {
                 alert('Error: ' + error.message);

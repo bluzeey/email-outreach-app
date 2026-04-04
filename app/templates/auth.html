@@ -231,6 +231,17 @@
     
     <script>
         async function checkAuthStatus() {
+            // Check for error parameter in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const errorParam = urlParams.get('error');
+            let errorMessage = null;
+            
+            if (errorParam === 'gmail_auth_required') {
+                errorMessage = 'Your Gmail authentication has expired or is corrupted. Please reconnect your account.';
+            } else if (errorParam === 'auth_failed') {
+                errorMessage = 'Authentication failed. Please try connecting again.';
+            }
+            
             try {
                 const response = await fetch('/auth/status');
                 const data = await response.json();
@@ -256,13 +267,27 @@
                     disconnectBtn.style.display = 'inline-block';
                 } else {
                     statusCard.className = 'status-card disconnected';
-                    statusCard.innerHTML = `
+                    let statusHtml = `
                         <div class="status-icon" style="color: var(--color-gray-400);">!</div>
                         <h3 style="color: var(--color-gray-700);">Not Connected</h3>
-                        <p style="color: var(--color-gray-500);">
-                            Connect your Gmail account to start sending emails
-                        </p>
                     `;
+                    
+                    if (errorMessage) {
+                        statusHtml += `
+                            <div class="alert alert-warning" style="margin: 1rem 0; text-align: left;">
+                                <strong>⚠️ Authentication Issue</strong><br>
+                                ${errorMessage}
+                            </div>
+                        `;
+                    } else {
+                        statusHtml += `
+                            <p style="color: var(--color-gray-500);">
+                                Connect your Gmail account to start sending emails
+                            </p>
+                        `;
+                    }
+                    
+                    statusCard.innerHTML = statusHtml;
                     connectBtn.style.display = 'inline-flex';
                     disconnectBtn.style.display = 'none';
                 }

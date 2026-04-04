@@ -1,6 +1,7 @@
 """Security utilities."""
 
 import hashlib
+import json
 import secrets
 from typing import Optional
 
@@ -49,6 +50,80 @@ def decrypt_token(encrypted_token: str) -> str:
     key = get_encryption_key()
     f = Fernet(key)
     return f.decrypt(encrypted_token.encode()).decode()
+
+
+def parse_gmail_credentials(
+    encrypted_token: str,
+    encrypted_refresh_token: Optional[str] = None
+) -> dict:
+    """Parse Gmail credentials from encrypted storage.
+    
+    Supports both formats:
+    1. JSON credentials (new format) - decrypted string is a JSON object
+    2. Raw token string (legacy format) - decrypted string is just the access token
+    
+    Args:
+        encrypted_token: The encrypted access token or JSON credentials
+        encrypted_refresh_token: Optional encrypted refresh token (legacy format)
+    
+    Returns:
+        dict: Credentials dictionary suitable for GmailClient
+    
+    Raises:
+        ValueError: If token is corrupted or cannot be decrypted
+    """
+    try:
+        decrypted = decrypt_token(encrypted_token)
+    except Exception as e:
+        raise ValueError(f"Failed to decrypt Gmail token: {str(e)}") from e
+    
+    # Try to parse as JSON first (new format)
+    try:
+        creds = json.loads(decrypted)
+        if isinstance(creds, dict) and "token" in creds:
+            # Valid JSON credentials format
+            return creds
+    except json.JSONDecodeError:
+        # Not JSON, treat as raw token (legacy format)
+        pass
+    
+    # Legacy format: raw token string - construct full credentials dict
+    token = decrypted
+    
+    # Try to get refresh token if available (legacy format)
+    refresh_token = None
+    if encrypted_refresh_token:
+        try:
+            refresh_token = decrypt_token(encrypted_refresh_token)
+        except Exception:
+            # Refresh token might be corrupted, but we can still try with access token
+            pass
+    
+    # Build full credentials dict from settings and token
+    return {
+        "token": token,
+        "refresh_token": refresh_token,
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "scopes": ["https://www.googleapis.com/auth/gmail.send", "openid", "https://www.googleapis.com/auth/userinfo.email"],
+    }
+
+
+def validate_gmail_token(credentials_dict: dict) -> bool:
+    """Validate that Gmail credentials have required fields.
+    
+    Args:
+        credentials_dict: Credentials dictionary from parse_gmail_credentials
+    
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    required_fields = ["token", "token_uri", "client_id", "client_secret"]
+    for field in required_fields:
+        if not credentials_dict.get(field):
+            return False
+    return True
 
 
 def generate_idempotency_key(campaign_id: str, recipient_email: str, subject: str, body: str) -> str:

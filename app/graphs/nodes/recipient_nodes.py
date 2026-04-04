@@ -421,32 +421,40 @@ class RecipientGraphNodes:
             
             # Actually send
             try:
-                from app.core.security import decrypt_token
-                import json
+                from app.core.security import parse_gmail_credentials, validate_gmail_token
                 
-                logger.info(f"[SEND] Decrypting token for Gmail account: {gmail_account.email}")
+                logger.info(f"[SEND] Parsing credentials for Gmail account: {gmail_account.email}")
                 
                 # Decrypt token
                 if not gmail_account.token_encrypted:
                     logger.error(f"[SEND] No encrypted token found for Gmail account: {gmail_account.email}")
                     raise ValueError("Gmail token not found or expired. Please reconnect your Gmail account.")
                 
-                # Decrypt and parse token
+                # Parse credentials using the new helper (handles both JSON and legacy formats)
                 try:
-                    decrypted = decrypt_token(gmail_account.token_encrypted)
-                    token_data = json.loads(decrypted)
-                except json.JSONDecodeError as e:
-                    logger.error(f"[SEND] Token decryption produced invalid JSON - encryption key mismatch or corrupted token")
+                    credentials_dict = parse_gmail_credentials(
+                        gmail_account.token_encrypted,
+                        gmail_account.refresh_token_encrypted
+                    )
+                    if not validate_gmail_token(credentials_dict):
+                        raise ValueError("Invalid credentials structure")
+                except ValueError as e:
+                    logger.error(f"[SEND] Token parsing failed: {e}")
+                    # Auto-disconnect the corrupted account
+                    gmail_account.status = "disconnected"
+                    await self.session.flush()
                     raise ValueError("Gmail authentication token is corrupted. Please go to Settings and reconnect your Gmail account.") from e
                 except Exception as e:
                     logger.error(f"[SEND] Token decryption failed: {type(e).__name__}: {str(e)}")
+                    # Auto-disconnect the corrupted account
+                    gmail_account.status = "disconnected"
+                    await self.session.flush()
                     raise ValueError("Failed to decrypt Gmail token. Please go to Settings and reconnect your Gmail account.") from e
                 
-                logger.info(f"[SEND] Token decrypted successfully, expires at: {token_data.get('expiry', 'unknown')}")
+                logger.info(f"[SEND] Credentials parsed successfully, creating Gmail client...")
                 
                 # Create Gmail client
-                logger.info(f"[SEND] Creating Gmail client...")
-                client = GmailClient(token_data)
+                client = GmailClient(credentials_dict)
                 
                 # Send email
                 logger.info(f"[SEND] Sending email via Gmail API...")

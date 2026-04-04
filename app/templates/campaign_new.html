@@ -18,44 +18,66 @@
         </header>
         
         <main>
-            <h2>Create New Campaign</h2>
-            
-            <form id="campaign-form" class="form">
-                <div class="form-group">
-                    <label for="name">Campaign Name</label>
-                    <input type="text" id="name" name="name" required 
-                           placeholder="e.g., Q1 Sales Outreach">
-                </div>
+            <div style="max-width: 680px;">
+                <h2 style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.75rem;">📢</span>
+                    Create New Campaign
+                </h2>
                 
-                <div class="form-group">
-                    <label for="context">Campaign Context / Purpose</label>
-                    <textarea id="context" name="context" rows="4" 
-                              placeholder="Describe what this campaign is about. For example: 'Inviting AI researchers to our annual conference in San Francisco. Emphasize networking opportunities and keynote speakers.'"></textarea>
-                    <small>This helps the AI understand your intent and generate better personalized emails.</small>
-                </div>
-                
-                <div class="form-group">
-                    <label for="dry-run">
-                        <input type="checkbox" id="dry-run" name="dry_run" checked>
-                        Dry-run mode (generate previews only, don't send emails)
-                    </label>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Create Campaign</button>
-                    <a href="/campaigns" class="btn btn-secondary">Cancel</a>
-                </div>
-            </form>
+                <form id="campaign-form" class="form">
+                    <div class="card" style="margin-bottom: 1.5rem;">
+                        <div class="form-group">
+                            <label for="name">Campaign Name *</label>
+                            <input type="text" id="name" name="name" required 
+                                   placeholder="e.g., Q1 Sales Outreach, Conference Invitation 2024">
+                        </div>
+                        
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="context">Campaign Context / Purpose</label>
+                            <textarea id="context" name="context" rows="5" 
+                                      placeholder="Describe what this campaign is about. For example: 'Inviting AI researchers to our annual conference in San Francisco. Emphasize networking opportunities and keynote speakers.'"></textarea>
+                            <small>This helps the AI understand your intent and generate better personalized emails.</small>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="background: #f0fdf4; border-color: #bbf7d0; margin-bottom: 1.5rem;">
+                        <div class="form-group checkbox" style="margin-bottom: 0;">
+                            <label for="dry-run" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+                                <input type="checkbox" id="dry-run" name="dry_run" checked style="margin-top: 0.25rem;">
+                                <span>
+                                    <strong style="color: #166534;">Dry-run mode</strong>
+                                    <br>
+                                    <span style="font-size: 0.9rem; color: #4b5563; font-weight: 400;">
+                                        Generate email previews only. No actual emails will be sent. 
+                                        You can review and approve before switching to live mode.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions" style="border-top: none; padding-top: 0; margin-top: 0;">
+                        <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">
+                            Create Campaign →
+                        </button>
+                        <a href="/campaigns" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
         </main>
         
         <footer>
-            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+            <p>Email Outreach App — Built with FastAPI + LangGraph</p>
         </footer>
     </div>
     
     <script>
         document.getElementById('campaign-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = 'Creating...';
             
             const name = document.getElementById('name').value;
             const context = document.getElementById('context').value;
@@ -71,12 +93,15 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Redirect to campaign detail
                     window.location.href = `/campaigns/${data.id}`;
                 } else {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Create Campaign →';
                     alert('Failed to create campaign: ' + (data.detail || 'Unknown error'));
                 }
             } catch (error) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Create Campaign →';
                 alert('Error: ' + error.message);
             }
         });

@@ -12,7 +12,7 @@
             <h1>Email Outreach App</h1>
             <nav>
                 <a href="/">Home</a>
-                <a href="/campaigns">Campaigns</a>
+                <a href="/campaigns" class="active">Campaigns</a>
                 <a href="/auth">Connect Gmail</a>
             </nav>
         </header>
@@ -20,18 +20,31 @@
         <main>
             <div class="page-header">
                 <h2>Campaigns</h2>
-                <a href="/campaigns/new" class="btn btn-primary">+ New Campaign</a>
+                <a href="/campaigns/new" class="btn btn-primary">
+                    <span>+</span> New Campaign
+                </a>
             </div>
             
             <div id="campaigns-list">
-                <p>Loading campaigns...</p>
+                <div style="display: flex; justify-content: center; padding: 3rem;">
+                    <div style="text-align: center; color: var(--color-gray-400);">
+                        <div style="width: 24px; height: 24px; border: 3px solid var(--color-gray-200); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                        <p>Loading campaigns...</p>
+                    </div>
+                </div>
             </div>
         </main>
         
         <footer>
-            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+            <p>Email Outreach App — Built with FastAPI + LangGraph</p>
         </footer>
     </div>
+    
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
     
     <script>
         async function loadCampaigns() {
@@ -44,38 +57,56 @@
                 if (data.campaigns.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <p>No campaigns yet. Create your first campaign to get started.</p>
+                            <div class="empty-state-icon">📭</div>
+                            <h3>No campaigns yet</h3>
+                            <p>Create your first campaign to start sending personalized emails to your leads.</p>
                             <a href="/campaigns/new" class="btn btn-primary">Create Campaign</a>
                         </div>
                     `;
                     return;
                 }
                 
-                const table = document.createElement('table');
-                table.className = 'data-table';
+                const table = document.createElement('div');
+                table.className = 'table-container';
                 table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>Dry Run</th>
-                            <th>Created</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.campaigns.map(c => `
+                    <table class="data-table">
+                        <thead>
                             <tr>
-                                <td>${c.name}</td>
-                                <td><span class="status-badge status-${c.status}">${c.status}</span></td>
-                                <td>${c.dry_run ? 'Yes' : 'No'}</td>
-                                <td>${new Date(c.created_at).toLocaleDateString()}</td>
-                                <td>
-                                    <a href="/campaigns/${c.id}" class="btn btn-small">View</a>
-                                </td>
+                                <th>Campaign Name</th>
+                                <th>Status</th>
+                                <th>Mode</th>
+                                <th>Created</th>
+                                <th style="text-align: right;">Actions</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
+                        </thead>
+                        <tbody>
+                            ${data.campaigns.map(c => `
+                                <tr>
+                                    <td>
+                                        <strong style="color: var(--color-gray-800);">${c.name}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-${c.status}">${formatStatus(c.status)}</span>
+                                    </td>
+                                    <td>
+                                        ${c.dry_run 
+                                            ? '<span style="color: var(--color-gray-500);">Dry Run</span>' 
+                                            : '<span style="color: var(--color-success);">Live</span>'}
+                                    </td>
+                                    <td style="color: var(--color-gray-500);">
+                                        ${new Date(c.created_at).toLocaleDateString(undefined, { 
+                                            month: 'short', 
+                                            day: 'numeric', 
+                                            year: 'numeric' 
+                                        })}
+                                    </td>
+                                    <td style="text-align: right;">
+                                        <a href="/campaigns/${c.id}" class="btn btn-small">View Details →</a>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
                 `;
                 
                 container.innerHTML = '';
@@ -83,9 +114,17 @@
                 
             } catch (error) {
                 document.getElementById('campaigns-list').innerHTML = `
-                    <div class="error">Failed to load campaigns: ${error.message}</div>
+                    <div class="alert alert-error" style="margin: 2rem 0;">
+                        <strong>Error loading campaigns:</strong> ${error.message}
+                        <br><br>
+                        <button onclick="loadCampaigns()" class="btn btn-secondary btn-small">Try Again</button>
+                    </div>
                 `;
             }
+        }
+        
+        function formatStatus(status) {
+            return status.replace(/_/g, ' ');
         }
         
         loadCampaigns();

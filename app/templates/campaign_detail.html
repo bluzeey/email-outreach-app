@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Campaign Details - Email Outreach App</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/campaign.css">
 </head>
 <body>
     <div class="container">
@@ -20,14 +19,249 @@
         
         <main>
             <div id="campaign-details">
-                <p>Loading campaign...</p>
+                <div style="display: flex; justify-content: center; padding: 4rem;">
+                    <div style="text-align: center; color: var(--color-gray-400);">
+                        <div style="width: 32px; height: 32px; border: 3px solid var(--color-gray-200); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                        <p>Loading campaign...</p>
+                    </div>
+                </div>
             </div>
         </main>
         
         <footer>
-            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+            <p>Email Outreach App — Built with FastAPI + LangGraph</p>
         </footer>
     </div>
+    
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .campaign-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid var(--color-gray-200);
+        }
+        
+        .campaign-title {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .campaign-title h2 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .campaign-meta {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            color: var(--color-gray-500);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+        
+        .campaign-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+        
+        .action-bar {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .section-card {
+            background: #fff;
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-card h3 {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .info-item label {
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+            font-weight: 500;
+        }
+        
+        .info-item value {
+            color: var(--color-gray-800);
+            font-weight: 500;
+        }
+        
+        .upload-area {
+            border: 2px dashed var(--color-gray-300);
+            border-radius: var(--radius);
+            padding: 2rem;
+            text-align: center;
+            background: var(--color-gray-50);
+            transition: var(--transition);
+        }
+        
+        .upload-area:hover {
+            border-color: var(--color-primary);
+            background: #eff6ff;
+        }
+        
+        .draft-card {
+            background: #fff;
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        
+        .draft-card:last-child {
+            margin-bottom: 0;
+        }
+        
+        .draft-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--color-gray-100);
+        }
+        
+        .draft-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+            margin-bottom: 0.75rem;
+        }
+        
+        .draft-body {
+            background: var(--color-gray-50);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius-sm);
+            padding: 1rem;
+            font-family: inherit;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .analysis-progress {
+            background: #eff6ff;
+            border: 1px solid #dbeafe;
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .analysis-progress h3 {
+            margin: 0 0 1rem 0;
+            color: #1e40af;
+        }
+        
+        .progress-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.75rem;
+            font-size: 0.9rem;
+        }
+        
+        .error-section {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .error-section h3 {
+            margin: 0 0 1rem 0;
+            color: #dc2626;
+        }
+        
+        .error-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .error-list li {
+            padding: 0.5rem 0;
+            color: #7f1d1d;
+            border-bottom: 1px solid #fecaca;
+        }
+        
+        .error-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .schema-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+        
+        .schema-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .schema-item label {
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+        }
+        
+        .schema-item value {
+            color: var(--color-gray-800);
+            font-weight: 500;
+        }
+        
+        .confidence-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            background: #dbeafe;
+            color: #1e40af;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        #rows-section {
+            margin-top: 1.5rem;
+        }
+    </style>
     
     <script>
         const campaignId = window.location.pathname.split('/').pop();
@@ -44,175 +278,231 @@
                 const container = document.getElementById('campaign-details');
                 
                 container.innerHTML = `
-                    <div class="page-header">
-                        <div>
-                            <h2>${campaign.name}</h2>
-                            <span class="status-badge status-${campaign.status}">${campaign.status}</span>
-                            ${campaign.dry_run ? '<span class="badge">DRY RUN</span>' : ''}
+                    <div class="campaign-header">
+                        <div class="campaign-title">
+                            <h2>
+                                ${campaign.name}
+                                <span class="status-badge status-${campaign.status}">${formatStatus(campaign.status)}</span>
+                                ${campaign.dry_run ? '<span style="background: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">DRY RUN</span>' : ''}
+                            </h2>
+                            <div class="campaign-meta">
+                                <span>📅 Created ${new Date(campaign.created_at).toLocaleDateString()}</span>
+                                ${campaign.csv_filename ? `<span>📁 ${campaign.csv_filename}</span>` : ''}
+                                ${campaign.totals_json?.total_rows ? `<span>👥 ${campaign.totals_json.total_rows} recipients</span>` : ''}
+                            </div>
                         </div>
-                        <div class="actions">
+                        <div class="action-bar">
                             ${getActionButtons(campaign)}
                         </div>
                     </div>
                     
-                    <div class="campaign-info">
-                        <p><strong>Created:</strong> ${new Date(campaign.created_at).toLocaleString()}</p>
-                        ${campaign.csv_filename ? `<p><strong>File:</strong> ${campaign.csv_filename}</p>` : ''}
-                        ${campaign.context ? `<p><strong>Context:</strong> ${campaign.context}</p>` : ''}
-                        ${campaign.totals_json && campaign.totals_json.total_rows ? `<p><strong>Recipients:</strong> ${campaign.totals_json.total_rows} valid emails</p>` : ''}
-                    </div>
+                    ${campaign.errors?.length > 0 ? renderErrorsSection(campaign.errors) : ''}
                     
-                    ${campaign.errors && campaign.errors.length > 0 ? renderErrorsSection(campaign.errors) : ''}
-                    
-                    ${campaign.csv_filename ? '' : renderUploadSection()}
-                    
-                    ${campaign.sample_drafts_json && campaign.sample_drafts_json.length > 0 ? renderSampleDraftsSection(campaign.sample_drafts_json) : ''}
+                    ${!campaign.csv_filename ? renderUploadSection() : ''}
                     
                     ${campaign.inferred_schema_json && Object.keys(campaign.inferred_schema_json).length > 0 ? renderSchemaSection(campaign.inferred_schema_json) : ''}
                     
                     ${campaign.campaign_plan_json && Object.keys(campaign.campaign_plan_json).length > 0 ? renderPlanSection(campaign.campaign_plan_json) : ''}
                     
+                    ${campaign.sample_drafts_json?.length > 0 ? renderSampleDraftsSection(campaign.sample_drafts_json) : ''}
+                    
                     <div id="progress-section"></div>
                     
-                    <div id="rows-section">
-                        <h3>Recipients</h3>
-                        <p>Loading...</p>
+                    <div class="card" style="padding: 0; overflow: hidden;">
+                        <div style="padding: 1rem 1.5rem; border-bottom: 1px solid var(--color-gray-200); background: var(--color-gray-50);">
+                            <h3 style="margin: 0;">Recipients</h3>
+                        </div>
+                        <div id="rows-content" style="padding: 1.5rem;">
+                            <p style="text-align: center; color: var(--color-gray-400);">Loading recipients...</p>
+                        </div>
                     </div>
                 `;
                 
-                // Load progress if campaign is running or completed
                 if (['running', 'completed', 'paused'].includes(campaign.status)) {
                     loadProgress();
                 }
                 
-                // Load rows with expected count
                 const expectedCount = campaign.totals_json ? campaign.totals_json.total_rows : 0;
                 loadRows(expectedCount);
                 
             } catch (error) {
                 document.getElementById('campaign-details').innerHTML = `
-                    <div class="error">Failed to load campaign: ${error.message}</div>
+                    <div class="alert alert-error">
+                        <strong>Failed to load campaign:</strong> ${error.message}
+                        <br><br>
+                        <a href="/campaigns" class="btn btn-secondary btn-small">← Back to Campaigns</a>
+                    </div>
                 `;
             }
+        }
+        
+        function formatStatus(status) {
+            return status.replace(/_/g, ' ');
         }
         
         function getActionButtons(campaign) {
             const buttons = [];
             
-            if (['created', 'profiling'].includes(campaign.status)) {
-                if (campaign.csv_filename) {
-                    // Check if we have partial data (interrupted analysis)
-                    if (campaign.totals_json && campaign.totals_json.total_rows > 0) {
-                        buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔄 Resume Analysis</button>`);
-                        buttons.push(`<button onclick="analyzeCampaign(true)" class="btn btn-secondary">Restart</button>`);
-                    } else {
-                        buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔍 Analyze</button>`);
-                    }
+            if (['created', 'profiling'].includes(campaign.status) && campaign.csv_filename) {
+                if (campaign.totals_json?.total_rows > 0) {
+                    buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔄 Resume Analysis</button>`);
+                    buttons.push(`<button onclick="analyzeCampaign(true)" class="btn btn-secondary">Restart</button>`);
+                } else {
+                    buttons.push(`<button onclick="analyzeCampaign()" class="btn btn-primary">🔍 Analyze</button>`);
                 }
             }
             
             if (['awaiting_schema_review', 'awaiting_campaign_approval'].includes(campaign.status)) {
-                buttons.push(`<button onclick="startSending()" class="btn btn-primary">📧 Start Sending</button>`);
+                buttons.push(`<button onclick="startSending()" class="btn btn-success">📧 Start Sending</button>`);
                 buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
             }
             
             if (['created', 'paused'].includes(campaign.status)) {
-                buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">Run</button>`);
+                buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">▶ Run</button>`);
             }
             
             if (campaign.status === 'running') {
-                buttons.push(`<button onclick="pauseCampaign()" class="btn btn-secondary">Pause</button>`);
+                buttons.push(`<button onclick="pauseCampaign()" class="btn btn-secondary">⏸ Pause</button>`);
             }
             
-            // Add delete button (always available but styled as danger)
-            buttons.push(`<button onclick="deleteCampaign()" class="btn btn-danger">🗑️ Delete</button>`);
+            buttons.push(`<button onclick="exportCampaign()" class="btn btn-secondary">⬇ Export</button>`);
+            buttons.push(`<button onclick="deleteCampaign()" class="btn btn-danger">🗑 Delete</button>`);
             
-            buttons.push(`<button onclick="exportCampaign()" class="btn btn-secondary">Export</button>`);
-            
-            return buttons.join(' ');
+            return buttons.join('');
         }
         
         function renderUploadSection() {
             return `
-                <div class="upload-section">
-                    <h3>Upload Leads File</h3>
-                    <p>Supported formats: CSV, Excel (.xls, .xlsx)</p>
-                    <form id="upload-form" enctype="multipart/form-data">
-                        <input type="file" name="file" accept=".csv,.xls,.xlsx,.xlsm" required>
-                        <button type="submit" class="btn btn-primary">Upload</button>
-                    </form>
+                <div class="section-card">
+                    <h3>📤 Upload Leads File</h3>
+                    <div class="upload-area">
+                        <form id="upload-form" enctype="multipart/form-data" style="margin: 0;">
+                            <p style="color: var(--color-gray-500); margin-bottom: 1rem;">Drag & drop your file here, or click to browse</p>
+                            <input type="file" name="file" accept=".csv,.xls,.xlsx,.xlsm" required 
+                                   style="margin-bottom: 1rem;" onchange="updateFileName(this)">
+                            <p id="selected-file" style="font-size: 0.9rem; color: var(--color-gray-700); margin-bottom: 1rem; min-height: 1.5rem;"></p>
+                            <button type="submit" class="btn btn-primary">Upload File</button>
+                        </form>
+                    </div>
+                    <p style="margin-bottom: 0; margin-top: 1rem; font-size: 0.875rem; color: var(--color-gray-500);">
+                        Supported formats: CSV, Excel (.xls, .xlsx)
+                    </p>
                 </div>
             `;
         }
         
+        function updateFileName(input) {
+            const fileName = input.files[0]?.name || '';
+            document.getElementById('selected-file').textContent = fileName ? `Selected: ${fileName}` : '';
+        }
+        
         function renderErrorsSection(errors) {
-            if (!errors || errors.length === 0) return '';
-            
-            const errorList = errors.map(e => `<li>${e}</li>`).join('');
             return `
-                <div class="errors-section">
+                <div class="error-section">
                     <h3>⚠️ Processing Errors</h3>
-                    <ul>${errorList}</ul>
+                    <ul class="error-list">
+                        ${errors.map(e => `<li>${e}</li>`).join('')}
+                    </ul>
                 </div>
             `;
         }
         
         function renderSchemaSection(schema) {
             return `
-                <div class="schema-section">
-                    <h3>Inferred Schema</h3>
-                    <p><strong>Email Column:</strong> ${schema.primary_email_column || 'Not detected'}</p>
-                    <p><strong>Name Columns:</strong> ${schema.recipient_name_columns?.join(', ') || 'None'}</p>
-                    <p><strong>Company Columns:</strong> ${schema.company_columns?.join(', ') || 'None'}</p>
-                    <p><strong>Personalization:</strong> ${schema.personalization_columns?.slice(0, 5).join(', ') || 'None'}${schema.personalization_columns?.length > 5 ? '...' : ''}</p>
-                    <p><strong>Confidence:</strong> ${Math.round((schema.confidence || 0) * 100)}%</p>
-                    ${schema.unresolved_questions?.length ? `<p class="warning"><strong>Questions:</strong> ${schema.unresolved_questions.join(', ')}</p>` : ''}
+                <div class="section-card" style="background: #eff6ff; border-color: #dbeafe;">
+                    <h3 style="color: #1e40af;">📊 Inferred Schema</h3>
+                    <div class="schema-grid">
+                        <div class="schema-item">
+                            <label>Email Column</label>
+                            <value>${schema.primary_email_column || 'Not detected'}</value>
+                        </div>
+                        <div class="schema-item">
+                            <label>Confidence</label>
+                            <value><span class="confidence-badge">${Math.round((schema.confidence || 0) * 100)}%</span></value>
+                        </div>
+                        <div class="schema-item">
+                            <label>Name Columns</label>
+                            <value>${schema.recipient_name_columns?.join(', ') || 'None'}</value>
+                        </div>
+                        <div class="schema-item">
+                            <label>Company Columns</label>
+                            <value>${schema.company_columns?.join(', ') || 'None'}</value>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Personalization Fields</label>
+                            <value>${schema.personalization_columns?.join(', ') || 'None'}</value>
+                        </div>
+                    </div>
+                    ${schema.unresolved_questions?.length ? `
+                        <div class="alert alert-warning" style="margin-top: 1rem; margin-bottom: 0;">
+                            <strong>Open Questions:</strong> ${schema.unresolved_questions.join(', ')}
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
         
         function renderPlanSection(plan) {
             return `
-                <div class="plan-section">
-                    <h3>Campaign Plan</h3>
-                    <p><strong>Goal:</strong> ${plan.inferred_goal}</p>
-                    <p><strong>Tone:</strong> ${plan.tone}</p>
-                    <p><strong>CTA:</strong> ${plan.cta}</p>
+                <div class="section-card" style="background: #f0fdf4; border-color: #bbf7d0;">
+                    <h3 style="color: #166534;">🎯 Campaign Plan</h3>
+                    <div class="schema-grid">
+                        <div class="schema-item">
+                            <label>Goal</label>
+                            <value>${plan.inferred_goal}</value>
+                        </div>
+                        <div class="schema-item">
+                            <label>Tone</label>
+                            <value>${plan.tone}</value>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Call to Action</label>
+                            <value>${plan.cta}</value>
+                        </div>
+                    </div>
                 </div>
             `;
         }
         
         function renderSampleDraftsSection(drafts) {
-            if (!drafts || drafts.length === 0) return '';
-            
             const draftCards = drafts.map((draft, idx) => `
                 <div class="draft-card">
                     <div class="draft-header">
-                        <span class="draft-number">Sample ${idx + 1}</span>
-                        <span class="draft-confidence">${Math.round((draft.generation_confidence || 0) * 100)}% confidence</span>
+                        <span style="font-weight: 600; color: #166534;">Sample ${idx + 1}</span>
+                        <span style="background: #dcfce7; color: #166534; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                            ${Math.round((draft.generation_confidence || 0) * 100)}% confidence
+                        </span>
                     </div>
-                    <div class="draft-content">
-                        <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
-                        <p><strong>Subject:</strong> ${draft.subject || 'N/A'}</p>
-                        <div class="draft-body">
-                            <p><strong>Email Body:</strong></p>
-                            <pre>${draft.plain_text_body || 'No content'}</pre>
+                    <div class="draft-meta">
+                        <span><strong>To:</strong> ${draft.to || 'N/A'}</span>
+                    </div>
+                    <div style="margin-bottom: 0.75rem;">
+                        <strong style="font-size: 0.875rem; color: var(--color-gray-500);">Subject:</strong>
+                        <span style="margin-left: 0.5rem; color: var(--color-gray-800);">${draft.subject || 'N/A'}</span>
+                    </div>
+                    <div class="draft-body">${draft.plain_text_body || 'No content'}</div>
+                    ${draft.needs_human_review ? `
+                        <div class="alert alert-warning" style="margin-top: 0.75rem; margin-bottom: 0;">
+                            ⚠️ Needs review: ${(draft.review_reasons || []).join(', ')}
                         </div>
-                        ${draft.needs_human_review ? `<p class="warning">⚠️ Needs human review: ${(draft.review_reasons || []).join(', ')}</p>` : ''}
-                    </div>
+                    ` : ''}
                 </div>
             `).join('');
             
             return `
-                <div class="drafts-section">
-                    <h3>📧 Sample Email Drafts</h3>
-                    <p class="section-desc">Review these AI-generated sample emails before approving the campaign:</p>
-                    <div class="drafts-container">
-                        ${draftCards}
-                    </div>
+                <div class="section-card" style="background: #f0fdf4; border-color: #bbf7d0;">
+                    <h3 style="color: #166534;">📧 Sample Email Drafts</h3>
+                    <p style="color: var(--color-gray-600); margin-bottom: 1rem; font-size: 0.95rem;">
+                        Review these AI-generated sample emails before approving the campaign:
+                    </p>
+                    ${draftCards}
                 </div>
             `;
         }
+        
+        let currentPage = 1;
+        const pageSize = 10;
+        let totalRows = 0;
         
         async function loadProgress() {
             try {
@@ -220,91 +510,76 @@
                 const progress = await response.json();
                 
                 const section = document.getElementById('progress-section');
+                if (!section) return;
+                
                 section.innerHTML = `
-                    <h3>Progress</h3>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progress.percentage_complete}%"></div>
+                    <div class="section-card">
+                        <h3>📈 Campaign Progress</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progress.percentage_complete}%"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span>${progress.percentage_complete}% complete</span>
+                            <span>${progress.sent_count} sent · ${progress.failed_count} failed · ${progress.skipped_count} skipped</span>
+                        </div>
                     </div>
-                    <p>${progress.percentage_complete}% complete</p>
-                    <p>Total: ${progress.total_rows} | Sent: ${progress.sent_count} | Failed: ${progress.failed_count} | Skipped: ${progress.skipped_count}</p>
                 `;
             } catch (error) {
                 console.error('Failed to load progress:', error);
             }
         }
         
-        let currentPage = 1;
-        const pageSize = 10;
-        let totalRows = 0;
-        
-        // Pagination functions defined BEFORE loadRows to ensure availability
         function renderPagination(currentPage, totalPages, total) {
-            console.log('renderPagination called:', { currentPage, totalPages, total });
-            
-            if (totalPages <= 1) {
-                console.log('Only 1 page, no pagination needed');
-                return '';
-            }
+            if (totalPages <= 1) return '';
             
             const startItem = (currentPage - 1) * pageSize + 1;
             const endItem = Math.min(currentPage * pageSize, total);
             
             let buttons = '';
             
-            // Previous button
             if (currentPage > 1) {
-                buttons += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">← Previous</button>`;
+                buttons += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">← Prev</button>`;
             }
             
-            // Page numbers
             for (let i = 1; i <= totalPages; i++) {
                 if (i === currentPage) {
-                    buttons += `<button class="btn btn-small btn-active" disabled>${i}</button>`;
+                    buttons += `<button class="btn btn-small" style="background: var(--color-primary); color: white;" disabled>${i}</button>`;
                 } else if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
                     buttons += `<button onclick="changePage(${i})" class="btn btn-small">${i}</button>`;
                 } else if (i === currentPage - 2 || i === currentPage + 2) {
-                    buttons += `<span class="pagination-ellipsis">...</span>`;
+                    buttons += `<span style="color: var(--color-gray-400); padding: 0 0.25rem;">...</span>`;
                 }
             }
             
-            // Next button
             if (currentPage < totalPages) {
                 buttons += `<button onclick="changePage(${currentPage + 1})" class="btn btn-small">Next →</button>`;
             }
             
-            const html = `
+            return `
                 <div class="pagination">
                     <div class="pagination-info">Showing ${startItem}-${endItem} of ${total}</div>
                     <div class="pagination-buttons">${buttons}</div>
                 </div>
             `;
-            console.log('Pagination HTML generated:', html);
-            return html;
         }
         
         function changePage(page) {
-            console.log('changePage called:', page);
             loadRows(totalRows, page);
         }
         
         async function loadRows(expectedCount, page = 1) {
+            const section = document.getElementById('rows-content');
+            if (!section) return;
+            
             try {
-                console.log('loadRows called:', { expectedCount, page });
                 currentPage = page;
                 const response = await fetch(`/api/campaigns/${campaignId}/rows?page=${page}&page_size=${pageSize}`);
                 const data = await response.json();
                 
-                console.log('loadRows data received:', { total: data.total, rowsCount: data.rows.length });
-                
                 totalRows = data.total;
                 const totalPages = Math.ceil(totalRows / pageSize);
                 
-                console.log('Pagination calc:', { totalRows, totalPages, pageSize });
-                
-                const section = document.getElementById('rows-section');
-                
                 if (data.rows.length === 0) {
-                    // No recipients loaded yet
                     let message = 'No recipients yet.';
                     if (expectedCount && expectedCount > 0) {
                         message = `Expected ${expectedCount} recipients, but none were created. This may indicate a processing error.`;
@@ -313,50 +588,52 @@
                     }
                     
                     section.innerHTML = `
-                        <h3>Recipients</h3>
-                        <p class="warning">${message}</p>
+                        <div class="empty-state" style="padding: 2rem;">
+                            <div class="empty-state-icon">📭</div>
+                            <p>${message}</p>
+                        </div>
                     `;
                     return;
                 }
                 
                 const paginationHtml = renderPagination(page, totalPages, data.total);
-                console.log('Pagination HTML length:', paginationHtml.length);
                 
                 section.innerHTML = `
-                    <h3>Recipients (${data.total} total)</h3>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Email</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.rows.map(r => `
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
                                 <tr>
-                                    <td>${r.row_number}</td>
-                                    <td>${r.recipient_email || 'N/A'}</td>
-                                    <td><span class="status-badge status-${r.status}">${r.status}</span></td>
-                                    <td>
-                                        <button onclick="previewDraft('${r.id}')" class="btn btn-small btn-icon" title="Preview/Edit Email">👁️</button>
-                                        ${r.status === 'awaiting_review' ? `
-                                            <button onclick="approveRow('${r.id}')" class="btn btn-small">Approve</button>
-                                            <button onclick="rejectRow('${r.id}')" class="btn btn-small">Reject</button>
-                                        ` : ''}
-                                    </td>
+                                    <th style="width: 60px;">#</th>
+                                    <th>Email</th>
+                                    <th style="width: 140px;">Status</th>
+                                    <th style="width: 140px; text-align: right;">Actions</th>
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                ${data.rows.map(r => `
+                                    <tr>
+                                        <td style="color: var(--color-gray-400);">${r.row_number}</td>
+                                        <td style="font-weight: 500;">${r.recipient_email || 'N/A'}</td>
+                                        <td><span class="status-badge status-${r.status}">${formatStatus(r.status)}</span></td>
+                                        <td style="text-align: right;">
+                                            <button onclick="previewDraft('${r.id}')" class="btn btn-small" title="Preview/Edit">👁 View</button>
+                                            ${r.status === 'awaiting_review' ? `
+                                                <button onclick="approveRow('${r.id}')" class="btn btn-small btn-success">✓</button>
+                                                <button onclick="rejectRow('${r.id}')" class="btn btn-small btn-danger">✗</button>
+                                            ` : ''}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                     ${paginationHtml}
                 `;
             } catch (error) {
-                console.error('loadRows error:', error);
-                document.getElementById('rows-section').innerHTML = `
-                    <h3>Recipients</h3>
-                    <p class="error">Failed to load recipients: ${error.message}</p>
+                section.innerHTML = `
+                    <div class="alert alert-error" style="margin: 1rem 0;">
+                        Failed to load recipients: ${error.message}
+                    </div>
                 `;
             }
         }
@@ -369,33 +646,27 @@
             section.innerHTML = `
                 <div class="analysis-progress">
                     <h3>🔍 Analyzing Campaign</h3>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar">
-                            <div id="analysis-progress-fill" class="progress-fill" style="width: 0%"></div>
-                        </div>
-                        <span id="analysis-progress-text">0%</span>
+                    <div class="progress-bar">
+                        <div id="analysis-progress-fill" class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p id="analysis-status">Initializing...</p>
-                    <p id="analysis-current-row" style="font-size: 0.875rem; color: #6b7280;"></p>
+                    <div class="progress-status">
+                        <span id="analysis-status">Initializing...</span>
+                        <span id="analysis-percent">0%</span>
+                    </div>
+                    <p id="analysis-current-row" style="font-size: 0.875rem; color: var(--color-gray-500); margin-top: 0.5rem;"></p>
                 </div>
             `;
         }
         
         function updateAnalysisProgress(data) {
             const fill = document.getElementById('analysis-progress-fill');
-            const text = document.getElementById('analysis-progress-text');
+            const percent = document.getElementById('analysis-percent');
             const status = document.getElementById('analysis-status');
             const currentRow = document.getElementById('analysis-current-row');
             
-            if (fill) {
-                fill.style.width = `${data.percent_complete || 0}%`;
-            }
-            if (text) {
-                text.textContent = `${data.percent_complete || 0}%`;
-            }
-            if (status) {
-                status.textContent = data.message || 'Processing...';
-            }
+            if (fill) fill.style.width = `${data.percent_complete || 0}%`;
+            if (percent) percent.textContent = `${data.percent_complete || 0}%`;
+            if (status) status.textContent = data.message || 'Processing...';
             if (currentRow && data.current_row) {
                 currentRow.textContent = `Processing row ${data.current_row} of ${data.total_rows || '?'}`;
             }
@@ -403,13 +674,11 @@
         
         function hideAnalysisProgress() {
             const section = document.getElementById('progress-section');
-            section.innerHTML = '';
+            if (section) section.innerHTML = '';
         }
         
         function connectProgressStream(campaignId) {
-            if (eventSource) {
-                eventSource.close();
-            }
+            if (eventSource) eventSource.close();
             
             eventSource = new EventSource(`/api/campaigns/${campaignId}/progress-stream`);
             
@@ -437,10 +706,7 @@
         }
         
         async function analyzeCampaign(forceRestart = false) {
-            // Show progress UI
             showAnalysisProgress();
-            
-            // Connect to progress stream
             connectProgressStream(campaignId);
             
             try {
@@ -448,25 +714,15 @@
                 const response = await fetch(url, { method: 'POST' });
                 const data = await response.json();
                 
-                if (response.ok) {
-                    // Progress stream will handle the UI updates
-                    console.log('Analysis complete:', data);
-                    if (forceRestart) {
-                        alert(`Analysis restarted! Inferred ${data.schema_inference.personalization_columns?.length || 0} personalization fields.`);
-                    }
-                } else {
-                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
-                    if (eventSource) {
-                        eventSource.close();
-                    }
+                if (!response.ok) {
+                    if (eventSource) eventSource.close();
                     hideAnalysisProgress();
+                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
                 }
             } catch (error) {
-                alert('Error: ' + error.message);
-                if (eventSource) {
-                    eventSource.close();
-                }
+                if (eventSource) eventSource.close();
                 hideAnalysisProgress();
+                alert('Error: ' + error.message);
             }
         }
         
@@ -480,7 +736,6 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert('Campaign deleted successfully');
                     window.location.href = '/campaigns';
                 } else {
                     alert('Delete failed: ' + data.message);
@@ -496,7 +751,6 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert('Campaign approved! Starting to send emails...');
                     location.reload();
                 } else {
                     alert('Approval failed: ' + data.message);
@@ -507,7 +761,6 @@
         }
         
         async function startSending() {
-            // startSending is the same as approveCampaign - just a clearer name
             await approveCampaign();
         }
         
@@ -561,7 +814,7 @@
                 const data = await response.json();
                 
                 if (data.download_url) {
-                    alert('Export ready! Download link: ' + data.download_url);
+                    window.open(data.download_url, '_blank');
                 }
             } catch (error) {
                 alert('Export failed: ' + error.message);
@@ -577,7 +830,7 @@
                 });
                 
                 if (response.ok) {
-                    loadRows();
+                    loadRows(totalRows, currentPage);
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
@@ -593,7 +846,7 @@
                 });
                 
                 if (response.ok) {
-                    loadRows();
+                    loadRows(totalRows, currentPage);
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
@@ -616,37 +869,58 @@
                 
                 currentDraftData = draft;
                 
-                // Create modal content with view mode by default
                 const modalHtml = `
                     <div id="draft-modal" class="modal">
                         <div class="modal-content">
-                            <span class="close" onclick="closeModal()">&times;</span>
-                            <h3>📧 Email Preview</h3>
-                            <div id="draft-view-mode" class="draft-preview">
-                                <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
-                                <p><strong>Subject:</strong> <span id="view-subject">${escapeHtml(draft.subject)}</span></p>
-                                <hr>
-                                <div class="email-body">
-                                    <p><strong>Email Body:</strong></p>
-                                    <pre id="view-body">${escapeHtml(draft.plain_text_body)}</pre>
+                            <div class="modal-header">
+                                <h3>📧 Email Preview</h3>
+                                <button class="modal-close" onclick="closeModal()">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <div id="draft-view-mode">
+                                    <div style="margin-bottom: 1rem;">
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.25rem;">To</label>
+                                        <div style="font-weight: 500;">${draft.to || 'N/A'}</div>
+                                    </div>
+                                    <div style="margin-bottom: 1rem;">
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.25rem;">Subject</label>
+                                        <div id="view-subject" style="font-weight: 500;">${escapeHtml(draft.subject)}</div>
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.5rem;">Email Body</label>
+                                        <pre id="view-body" style="background: var(--color-gray-50); padding: 1rem; border-radius: var(--radius-sm); border: 1px solid var(--color-gray-200); white-space: pre-wrap; font-family: inherit; line-height: 1.6; max-height: 300px; overflow-y: auto;">${escapeHtml(draft.plain_text_body)}</pre>
+                                    </div>
+                                    ${draft.needs_human_review ? `
+                                        <div class="alert alert-warning" style="margin-top: 1rem;">
+                                            ⚠️ ${draft.review_reasons?.join(', ') || 'Needs review'}
+                                        </div>
+                                    ` : ''}
+                                    <div style="margin-top: 1rem; color: var(--color-gray-500); font-size: 0.875rem;">
+                                        Confidence: ${draft.generation_confidence}%
+                                    </div>
                                 </div>
-                                ${draft.needs_human_review ? `<p class="warning">⚠️ ${draft.review_reasons?.join(', ') || 'Needs review'}</p>` : ''}
-                                <p class="confidence">Confidence: ${draft.generation_confidence}%</p>
-                                <div class="modal-actions">
+                                <div id="draft-edit-mode" style="display: none;">
+                                    <div style="margin-bottom: 1rem;">
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.25rem;">To</label>
+                                        <div style="font-weight: 500;">${draft.to || 'N/A'}</div>
+                                    </div>
+                                    <div style="margin-bottom: 1rem;">
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.25rem;">Subject</label>
+                                        <input type="text" id="edit-subject" value="${escapeHtml(draft.subject)}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-gray-300); border-radius: var(--radius-sm);">
+                                    </div>
+                                    <div>
+                                        <label style="font-size: 0.875rem; color: var(--color-gray-500); display: block; margin-bottom: 0.5rem;">Email Body</label>
+                                        <textarea id="edit-body" rows="12" style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-gray-300); border-radius: var(--radius-sm); font-family: inherit; resize: vertical;">${escapeHtml(draft.plain_text_body)}</textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <div id="view-actions">
                                     <button onclick="switchToEditMode()" class="btn btn-primary">✏️ Edit</button>
                                     <button onclick="closeModal()" class="btn btn-secondary">Close</button>
                                 </div>
-                            </div>
-                            <div id="draft-edit-mode" class="draft-preview" style="display: none;">
-                                <p><strong>To:</strong> ${draft.to || 'N/A'}</p>
-                                <p><strong>Subject:</strong> <input type="text" id="edit-subject" value="${escapeHtml(draft.subject)}" class="form-input" style="width: 100%;"></p>
-                                <hr>
-                                <div class="email-body">
-                                    <p><strong>Email Body:</strong></p>
-                                    <textarea id="edit-body" class="form-textarea" rows="15" style="width: 100%; font-family: inherit;">${escapeHtml(draft.plain_text_body)}</textarea>
-                                </div>
-                                <div class="modal-actions">
-                                    <button onclick="saveDraft()" class="btn btn-primary">💾 Save</button>
+                                <div id="edit-actions" style="display: none;">
+                                    <button onclick="saveDraft()" class="btn btn-primary">💾 Save Changes</button>
                                     <button onclick="switchToViewMode()" class="btn btn-secondary">Cancel</button>
                                 </div>
                             </div>
@@ -654,16 +928,10 @@
                     </div>
                 `;
                 
-                // Remove existing modal if any
                 const existingModal = document.getElementById('draft-modal');
-                if (existingModal) {
-                    existingModal.remove();
-                }
+                if (existingModal) existingModal.remove();
                 
-                // Add modal to page
                 document.body.insertAdjacentHTML('beforeend', modalHtml);
-                
-                // Show modal
                 document.getElementById('draft-modal').style.display = 'block';
                 
             } catch (error) {
@@ -684,11 +952,15 @@
         function switchToEditMode() {
             document.getElementById('draft-view-mode').style.display = 'none';
             document.getElementById('draft-edit-mode').style.display = 'block';
+            document.getElementById('view-actions').style.display = 'none';
+            document.getElementById('edit-actions').style.display = 'flex';
         }
         
         function switchToViewMode() {
             document.getElementById('draft-edit-mode').style.display = 'none';
             document.getElementById('draft-view-mode').style.display = 'block';
+            document.getElementById('edit-actions').style.display = 'none';
+            document.getElementById('view-actions').style.display = 'flex';
         }
         
         async function saveDraft() {
@@ -701,10 +973,7 @@
                 const response = await fetch(`/api/campaigns/${campaignId}/rows/${currentRowId}/draft`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        subject: subject,
-                        plain_text_body: body
-                    })
+                    body: JSON.stringify({ subject: subject, plain_text_body: body })
                 });
                 
                 const data = await response.json();
@@ -713,25 +982,10 @@
                     throw new Error(data.detail || 'Failed to save draft');
                 }
                 
-                // Update the view with new data
                 document.getElementById('view-subject').textContent = data.subject;
                 document.getElementById('view-body').textContent = data.plain_text_body;
                 
-                // Show warning if not already present
-                if (data.needs_human_review) {
-                    const warningEl = document.querySelector('.warning');
-                    if (!warningEl) {
-                        const confidenceEl = document.querySelector('.confidence');
-                        if (confidenceEl) {
-                            confidenceEl.insertAdjacentHTML('beforebegin', `<p class="warning">⚠️ ${data.review_reasons?.join(', ') || 'Needs review'}</p>`);
-                        }
-                    }
-                }
-                
-                // Switch back to view mode
                 switchToViewMode();
-                
-                // Refresh the rows list to show updated status
                 loadRows(totalRows, currentPage);
                 
             } catch (error) {
@@ -741,23 +995,24 @@
         
         function closeModal() {
             const modal = document.getElementById('draft-modal');
-            if (modal) {
-                modal.remove();
-            }
+            if (modal) modal.remove();
         }
         
-        // Close modal when clicking outside
         window.onclick = function(event) {
             const modal = document.getElementById('draft-modal');
             if (event.target === modal) {
                 closeModal();
             }
-        }
+        };
         
         // Upload form handler
         document.addEventListener('submit', async (e) => {
             if (e.target.id === 'upload-form') {
                 e.preventDefault();
+                
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Uploading...';
                 
                 const formData = new FormData(e.target);
                 
@@ -773,322 +1028,19 @@
                         alert(`File uploaded! ${data.row_count} rows detected.`);
                         location.reload();
                     } else {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Upload File';
                         alert('Upload failed: ' + (data.detail || 'Unknown error'));
                     }
                 } catch (error) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Upload File';
                     alert('Error: ' + error.message);
                 }
             }
         });
         
-        // Load campaign on page load
         loadCampaign();
     </script>
-    
-    <style>
-        .badge {
-            background: #fef3c7;
-            color: #92400e;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 0.5rem;
-        }
-        
-        .upload-section {
-            background: #f9fafb;
-            padding: 1.5rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        
-        .errors-section {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            padding: 1.5rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        
-        .errors-section h3 {
-            margin-top: 0;
-            color: #dc2626;
-        }
-        
-        .errors-section ul {
-            color: #7f1d1d;
-            margin: 0;
-            padding-left: 1.5rem;
-        }
-        
-        .errors-section li {
-            margin: 0.5rem 0;
-        }
-        
-        .analysis-progress {
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin: 1rem 0;
-        }
-        
-        .analysis-progress h3 {
-            margin-top: 0;
-            color: #1e40af;
-        }
-        
-        .progress-bar-container {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin: 1rem 0;
-        }
-        
-        .progress-bar {
-            flex: 1;
-            height: 12px;
-            background: #dbeafe;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #3b82f6, #2563eb);
-            transition: width 0.3s ease;
-            border-radius: 6px;
-        }
-        
-        #analysis-progress-text {
-            font-weight: 600;
-            color: #1e40af;
-            min-width: 40px;
-        }
-        
-        #analysis-status {
-            color: #374151;
-            margin: 0.5rem 0;
-        }
-        
-        .schema-section, .plan-section {
-            background: #eff6ff;
-            padding: 1.5rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        
-        .drafts-section {
-            background: #f0fdf4;
-            padding: 1.5rem;
-            border-radius: 4px;
-            margin: 1rem 0;
-        }
-        
-        .drafts-section h3 {
-            margin-top: 0;
-            color: #166534;
-        }
-        
-        .section-desc {
-            color: #374151;
-            margin-bottom: 1rem;
-        }
-        
-        .drafts-container {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-        
-        .draft-card {
-            background: white;
-            border: 1px solid #bbf7d0;
-            border-radius: 8px;
-            padding: 1rem;
-        }
-        
-        .draft-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.75rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .draft-number {
-            font-weight: 600;
-            color: #166534;
-        }
-        
-        .draft-confidence {
-            background: #dcfce7;
-            color: #166534;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.875rem;
-        }
-        
-        .draft-content p {
-            margin: 0.5rem 0;
-        }
-        
-        .draft-body {
-            margin-top: 1rem;
-        }
-        
-        .draft-body pre {
-            background: #f9fafb;
-            padding: 1rem;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: inherit;
-            line-height: 1.6;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 20px;
-            background: #e5e7eb;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 1rem 0;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: #2563eb;
-            transition: width 0.3s;
-        }
-        
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 1000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-        }
-        
-        .modal-content {
-            background-color: #fefefe;
-            margin: 5% auto;
-            padding: 2rem;
-            border-radius: 8px;
-            width: 80%;
-            max-width: 700px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .close {
-            color: #aaa;
-            float: right;
-            font-size: 28px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        
-        .close:hover {
-            color: #000;
-        }
-        
-        .draft-preview {
-            margin-top: 1rem;
-        }
-        
-        .draft-preview .email-body pre {
-            background: #f9fafb;
-            padding: 1rem;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: inherit;
-            line-height: 1.6;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .btn-icon {
-            padding: 0.25rem 0.5rem;
-            font-size: 1rem;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-        }
-        
-        .btn-icon:hover {
-            background: #f3f4f6;
-            border-radius: 4px;
-        }
-        
-        .confidence {
-            color: #6b7280;
-            font-size: 0.875rem;
-            margin-top: 1rem;
-        }
-        
-        /* Pagination styles */
-        .pagination {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.75rem;
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid #e5e7eb;
-        }
-        
-        .pagination-info {
-            color: #6b7280;
-            font-size: 0.875rem;
-        }
-        
-        .pagination-buttons {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-        
-        .pagination-ellipsis {
-            color: #6b7280;
-            padding: 0.25rem 0.5rem;
-        }
-        
-        .btn-active {
-            background: #2563eb;
-            color: white;
-        }
-        
-        /* Form styles for edit mode */
-        .form-input, .form-textarea {
-            padding: 0.5rem 0.75rem;
-            border: 1px solid #d1d5db;
-            border-radius: 4px;
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }
-        
-        .form-input:focus, .form-textarea:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-        
-        .modal-actions {
-            display: flex;
-            gap: 0.75rem;
-            margin-top: 1.5rem;
-            justify-content: flex-end;
-            padding-top: 1rem;
-            border-top: 1px solid #e5e7eb;
-        }
-    </style>
 </body>
 </html>

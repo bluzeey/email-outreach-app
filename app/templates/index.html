@@ -11,46 +11,72 @@
         <header>
             <h1>Email Outreach App</h1>
             <nav>
-                <a href="/">Home</a>
+                <a href="/" class="active">Home</a>
                 <a href="/campaigns">Campaigns</a>
                 <a href="/auth">Connect Gmail</a>
             </nav>
         </header>
         
         <main>
-            <section class="hero">
-                <h2>Personalized Email Outreach Made Simple</h2>
-                <p>Upload your CSV, generate personalized emails, and send via Gmail with full control and audit.</p>
+            <section class="hero" style="text-align: center; padding: 3rem 0; margin-bottom: 2rem;">
+                <div style="font-size: 3.5rem; margin-bottom: 1rem;">✉️</div>
+                <h2 style="font-size: 2.25rem; margin-bottom: 1rem;">Personalized Email Outreach Made Simple</h2>
+                <p style="font-size: 1.125rem; color: var(--color-gray-500); max-width: 600px; margin: 0 auto 2rem;">
+                    Upload your CSV, generate personalized emails with AI, and send via Gmail with full control and audit.
+                </p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <a href="/campaigns/new" class="btn btn-primary" style="font-size: 1.05rem; padding: 0.75rem 1.5rem;">
+                        Create Your First Campaign
+                    </a>
+                    <a href="/auth" class="btn btn-secondary" style="font-size: 1.05rem; padding: 0.75rem 1.5rem;">
+                        Connect Gmail
+                    </a>
+                </div>
             </section>
             
-            <section class="quick-start">
-                <h3>Quick Start</h3>
-                <ol>
-                    <li><a href="/auth">Connect your Gmail account</a></li>
-                    <li><a href="/campaigns/new">Create a new campaign</a></li>
-                    <li>Upload your leads CSV</li>
-                    <li>Review inferred schema and sample emails</li>
-                    <li>Approve and run (or dry-run first)</li>
-                </ol>
-            </section>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                <div class="card" style="margin-bottom: 0;">
+                    <div style="font-size: 2rem; margin-bottom: 0.75rem;">🚀</div>
+                    <h3 style="margin-top: 0; margin-bottom: 0.75rem;">Quick Start</h3>
+                    <ol style="margin-left: 1.25rem; color: var(--color-gray-600); line-height: 1.8;">
+                        <li><a href="/auth">Connect your Gmail account</a></li>
+                        <li><a href="/campaigns/new">Create a new campaign</a></li>
+                        <li>Upload your leads CSV</li>
+                        <li>Review inferred schema and sample emails</li>
+                        <li>Approve and run (or dry-run first)</li>
+                    </ol>
+                </div>
+                
+                <div class="card" style="margin-bottom: 0;">
+                    <div style="font-size: 2rem; margin-bottom: 0.75rem;">✨</div>
+                    <h3 style="margin-top: 0; margin-bottom: 0.75rem;">Features</h3>
+                    <ul style="margin-left: 1.25rem; color: var(--color-gray-600); line-height: 1.8;">
+                        <li>AI-powered CSV schema inference</li>
+                        <li>Personalized email generation</li>
+                        <li>Campaign-level approval workflow</li>
+                        <li>Row-level review for risky emails</li>
+                        <li>Dry-run mode (default)</li>
+                        <li>Idempotency to prevent duplicates</li>
+                        <li>Full audit logging</li>
+                        <li>Resumable workflows</li>
+                    </ul>
+                </div>
+            </div>
             
-            <section class="features">
-                <h3>Features</h3>
-                <ul>
-                    <li>AI-powered CSV schema inference</li>
-                    <li>Personalized email generation</li>
-                    <li>Campaign-level approval workflow</li>
-                    <li>Row-level review for risky emails</li>
-                    <li>Dry-run mode (default)</li>
-                    <li>Idempotency to prevent duplicates</li>
-                    <li>Full audit logging</li>
-                    <li>Resumable workflows</li>
-                </ul>
-            </section>
+            <div class="info-section" style="margin: 0;">
+                <h3 style="margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+                    <span>💡</span> Getting Started Tip
+                </h3>
+                <p style="margin-bottom: 0; color: #374151;">
+                    Start with a small CSV file (10-20 rows) to test your campaign. Use <strong>dry-run mode</strong> 
+                    to preview emails before sending. The AI will automatically detect email columns and 
+                    personalization fields from your data.
+                </p>
+            </div>
         </main>
         
         <footer>
-            <p>Email Outreach App - Built with FastAPI + LangGraph</p>
+            <p>Email Outreach App — Built with FastAPI + LangGraph</p>
         </footer>
     </div>
 </body>

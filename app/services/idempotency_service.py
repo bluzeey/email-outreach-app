@@ -45,6 +45,9 @@ class IdempotencyService:
         
         If a record with the same idempotency key already exists (e.g., on retry),
         update the existing record instead of creating a new one.
+        
+        Note: This function does NOT commit the session - the caller is responsible
+        for managing the transaction.
         """
         key = generate_idempotency_key(campaign_id, recipient_email, subject, body)
         
@@ -59,7 +62,7 @@ class IdempotencyService:
             existing_event.status = status
             existing_event.provider_response_json = provider_response or {}
             existing_event.error_message = error_message
-            await session.commit()
+            # Don't flush here - let caller manage transaction
             
             logger.info(
                 "Updated existing send attempt (retry)",
@@ -80,7 +83,7 @@ class IdempotencyService:
         )
         
         session.add(event)
-        await session.commit()
+        # Don't flush here - let caller manage transaction
         
         logger.info(
             "Recorded new send attempt",

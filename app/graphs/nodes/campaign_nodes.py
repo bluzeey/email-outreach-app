@@ -399,6 +399,14 @@ class CampaignGraphNodes:
                 except Exception as row_error:
                     logger.error(f"Failed to create row {idx + 1}: {row_error}")
                     state.errors.append(f"Row {idx + 1} creation error: {str(row_error)}")
+                    # CRITICAL: Rollback the session on database errors to allow continued inserts
+                    error_str = str(row_error).lower()
+                    if "database is locked" in error_str or "rollback" in error_str:
+                        try:
+                            await self.session.rollback()
+                            logger.warning(f"Rolled back session after database lock error for row {idx + 1}")
+                        except Exception as rollback_error:
+                            logger.error(f"Failed to rollback session: {rollback_error}")
                     continue
                 
                 # Generate email draft for preview (AFTER row is created)
@@ -436,6 +444,14 @@ class CampaignGraphNodes:
                     except Exception as flush_error:
                         logger.error(f"Failed to flush batch: {flush_error}")
                         state.errors.append(f"Flush error: {str(flush_error)}")
+                        # Rollback on database lock errors
+                        error_str = str(flush_error).lower()
+                        if "database is locked" in error_str or "rollback" in error_str:
+                            try:
+                                await self.session.rollback()
+                                logger.warning("Rolled back session after batch flush error")
+                            except Exception as rollback_error:
+                                logger.error(f"Failed to rollback after batch error: {rollback_error}")
             
             # Final flush for remaining rows
             try:
@@ -444,6 +460,14 @@ class CampaignGraphNodes:
             except Exception as final_flush_error:
                 logger.error(f"Failed to finalize flush: {final_flush_error}")
                 state.errors.append(f"Final flush error: {str(final_flush_error)}")
+                # Rollback on database lock errors
+                error_str = str(final_flush_error).lower()
+                if "database is locked" in error_str or "rollback" in error_str:
+                    try:
+                        await self.session.rollback()
+                        logger.warning("Rolled back session after final flush error")
+                    except Exception as rollback_error:
+                        logger.error(f"Failed to rollback after final error: {rollback_error}")
             
             state.row_ids = row_ids
             state.totals = {

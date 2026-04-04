@@ -741,7 +741,15 @@
             };
         }
         
+        let isAnalyzing = false;
+        
         async function analyzeCampaign(forceRestart = false) {
+            if (isAnalyzing) {
+                alert('Analysis is already running. Please wait for it to complete.');
+                return;
+            }
+            
+            isAnalyzing = true;
             showAnalysisProgress();
             connectProgressStream(campaignId);
             
@@ -753,12 +761,19 @@
                 if (!response.ok) {
                     if (eventSource) eventSource.close();
                     hideAnalysisProgress();
-                    alert('Analysis failed: ' + (data.detail || 'Unknown error'));
+                    // Handle 423 Locked status specifically
+                    if (response.status === 423) {
+                        alert('Analysis is currently locked: ' + (data.detail || 'Another campaign is being analyzed. Please wait and try again.'));
+                    } else {
+                        alert('Analysis failed: ' + (data.detail || 'Unknown error'));
+                    }
                 }
             } catch (error) {
                 if (eventSource) eventSource.close();
                 hideAnalysisProgress();
                 alert('Error: ' + error.message);
+            } finally {
+                isAnalyzing = false;
             }
         }
         

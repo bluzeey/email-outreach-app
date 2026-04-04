@@ -92,19 +92,10 @@ def create_recipient_graph(session):
     workflow.add_edge("send_email_via_gmail", "persist_send_outcome")
     workflow.add_edge("persist_send_outcome", END)
     
-    # Compile with checkpointing
-    checkpoint_url = settings.CHECKPOINT_DATABASE_URL
-    if checkpoint_url.startswith("sqlite:///"):
-        checkpoint_url = checkpoint_url.replace("sqlite:///", "sqlite+aiosqlite:///")
-    
-    try:
-        checkpointer = SqliteSaver.from_conn_string(
-            checkpoint_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
-        )
-        return workflow.compile(checkpointer=checkpointer)
-    except Exception as e:
-        logger.warning(f"Failed to setup checkpointing: {e}, running without persistence")
-        return workflow.compile()
+    # Note: SqliteSaver requires async context manager which complicates the sync create function.
+    # For now, we run without checkpointer since we have proper error handling.
+    logger.info(f"Running without checkpoint persistence (checkpointer disabled for SQLite compatibility)")
+    return workflow.compile()
 
 
 def get_recipient_thread_id(campaign_id: str, recipient_id: str) -> str:

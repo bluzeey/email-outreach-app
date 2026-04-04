@@ -59,13 +59,12 @@ def create_campaign_graph(session):
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
     
-    try:
-        checkpointer = SqliteSaver.from_conn_string(db_path)
-        logger.info(f"Checkpointing configured with database: {db_path}")
-        return workflow.compile(checkpointer=checkpointer)
-    except Exception as e:
-        logger.warning(f"Failed to setup checkpointing: {e}, running without persistence")
-        return workflow.compile()
+    # Note: SqliteSaver requires async context manager which complicates the sync create function.
+    # For now, we run without checkpointer since we have proper error handling and global locks.
+    # The checkpointer would be useful for resuming interrupted analysis, but the app handles
+    # resumption through the existing_rows check in the analyze endpoint.
+    logger.info(f"Running without checkpoint persistence (checkpointer disabled for SQLite compatibility)")
+    return workflow.compile()
 
 
 def get_campaign_thread_id(campaign_id: str) -> str:

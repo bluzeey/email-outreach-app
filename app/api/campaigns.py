@@ -50,6 +50,10 @@ from app.services.progress_manager import progress_manager
 logger = get_logger(__name__)
 router = APIRouter()
 
+# Global lock for campaign analysis (SQLite can only handle one writer at a time)
+_analysis_lock = asyncio.Lock()
+_analyzing_campaigns: set[str] = set()
+
 
 async def get_session():
     """Get database session."""
@@ -216,7 +220,42 @@ async def analyze_campaign(
     
     Supports resuming from checkpoint if analysis was interrupted.
     Set force_restart=True to start fresh and delete existing progress.
+    
+    Note: SQLite only supports one writer at a time, so analysis is serialized
+    globally across all campaigns.
     """
+    # Check if this specific campaign is already being analyzed
+    if campaign_id in _analyzing_campaigns:
+        raise HTTPException(
+            status_code=423,  # Locked
+            detail="Analysis is already running for this campaign. Please wait for it to complete."
+        )
+    
+    # Check if any campaign is being analyzed (SQLite global lock)
+    if _analyzing_campaigns:
+        raise HTTPException(
+            status_code=423,  # Locked
+            detail=f"Another campaign is currently being analyzed. Only one analysis can run at a time with SQLite. Currently analyzing: {list(_analyzing_campaigns)[0]}"
+        )
+    
+    # Add this campaign to the analyzing set
+    _analyzing_campaigns.add(campaign_id)
+    
+    try:
+        # Acquire global lock for analysis (SQLite serialization)
+        async with _analysis_lock:
+            return await _run_analysis(campaign_id, force_restart, session)
+    finally:
+        # Always clean up the tracking set
+        _analyzing_campaigns.discard(campaign_id)
+
+
+async def _run_analysis(
+    campaign_id: str,
+    force_restart: bool,
+    session: AsyncSession,
+) -> CampaignAnalyzeResponse:
+    """Internal analysis function that runs under the global lock."""
     try:
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
@@ -353,11 +392,15 @@ async def analyze_campaign(
             campaign_plan=result.get("campaign_plan", {}),
             sample_count=len(result.get("sample_drafts", [])),
         )
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to analyze campaign: {e}")
+        logger.error(f"Failed to analyze campaign {campaign_id}: {e}")
+        # Ensure session is rolled back on error
+        try:
+            await session.rollback()
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
@@ -746,6 +789,7 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         return
     
     # Actually send
+    error_msg = None
     try:
         logger.info(f"[API_SEND] Decrypting token for {gmail_account.email}")
         
@@ -781,6 +825,7 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         
         logger.info(f"[API_SEND] Email sent successfully! Message ID: {result.get('message_id')}")
         
+        # Record success and update row status
         await idempotency_service.record_send_attempt(
             session=session,
             campaign_row_id=row.id,
@@ -808,6 +853,7 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
             logger.error(f"[API_SEND] Stack trace: {traceback.format_exc()}")
             error_msg = f"Failed to send: {str(e)}"
         
+        # Record failure in idempotency service
         await idempotency_service.record_send_attempt(
             session=session,
             campaign_row_id=row.id,
@@ -819,9 +865,10 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
             error_message=error_msg,
         )
         
+        # Update row status - but don't flush here, let caller handle transaction
         row.status = RowStatus.FAILED
         row.error_message = error_msg
-        await session.flush()
+        # Note: We don't flush here because the caller (retry endpoint) manages the transaction
 
 
 @router.post("/{campaign_id}/pause", response_model=CampaignActionResponse)

@@ -287,13 +287,16 @@ async def retry_failed_row(
         
         # Reset to GENERATED status so it can be sent again
         row.status = RowStatus.GENERATED
-        await session.commit()
+        await session.flush()
         
         logger.info(f"[RETRY] Retrying failed row {row_id} for campaign {campaign_id}")
         
         # Attempt to send the email again
         try:
             await _send_recipient_email(session, campaign, row)
+            
+            # Commit all changes (send_event record + row status)
+            await session.commit()
             
             # If successful, row status should be SENT
             if row.status == RowStatus.SENT:
@@ -315,6 +318,11 @@ async def retry_failed_row(
                 
         except Exception as e:
             logger.error(f"[RETRY] Failed to resend row {row_id}: {e}")
+            
+            # Rollback the transaction to clear any partial state
+            await session.rollback()
+            
+            # Start a fresh transaction to record the failure
             row.status = RowStatus.FAILED
             row.error_message = str(e)
             await session.commit()

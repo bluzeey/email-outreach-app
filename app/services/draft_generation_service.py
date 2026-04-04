@@ -184,6 +184,36 @@ Respond with ONLY valid JSON:
                 if field not in data or not data[field]:
                     raise ValueError(f"Missing required field: {field}")
             
+            # Post-process: Ensure signature is present
+            plain_body = data["plain_text_body"]
+            html_body = data["html_body"]
+            
+            # Add sender name to signature if missing
+            if sender_name:
+                # Check if signature ends with sender name
+                if not plain_body.strip().endswith(sender_name):
+                    # Remove any existing "Kind regards" line
+                    plain_body = plain_body.rstrip()
+                    if plain_body.endswith("Kind regards"):
+                        plain_body = plain_body[:-len("Kind regards")].rstrip()
+                    # Add proper signature
+                    plain_body = plain_body + f"\n\nKind regards,\n{sender_name}"
+                
+                # Same for HTML
+                if sender_name not in html_body.split("<p>")[-1]:
+                    # Remove existing signature line if present
+                    import re
+                    if "<p>Kind regards</p>" in html_body:
+                        html_body = html_body.replace("<p>Kind regards</p>", "")
+                    elif "Kind regards,<br>" in html_body:
+                        html_body = re.sub(r'Kind regards,<br>.*?</p>', '', html_body)
+                    # Add proper signature
+                    html_body = html_body.rstrip() + f"\n\n<p>Kind regards,<br>{sender_name}</p>"
+            
+            # Post-process: Remove em-dashes and replace with regular hyphens
+            plain_body = plain_body.replace("—", " - ")
+            html_body = html_body.replace("—", " - ")
+            
             # Determine if review needed
             needs_review = data.get("confidence", 0.8) < 0.7
             review_reasons = []
@@ -193,8 +223,8 @@ Respond with ONLY valid JSON:
             return GeneratedEmail(
                 to=recipient_email,
                 subject=data["subject"],
-                plain_text_body=data["plain_text_body"],
-                html_body=data["html_body"],
+                plain_text_body=plain_body,
+                html_body=html_body,
                 personalization_fields_used=data.get("personalization_fields_used", list(personalization_context.keys())),
                 key_claims_used=data.get("key_claims_used", []),
                 confidence=data.get("confidence", 0.8),

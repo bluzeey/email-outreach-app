@@ -547,6 +547,38 @@ async def run_campaign(
         raise HTTPException(status_code=500, detail=f"Run failed: {str(e)}")
 
 
+@router.post("/{campaign_id}/toggle-dry-run", response_model=CampaignActionResponse)
+async def toggle_dry_run(
+    campaign_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Toggle dry-run mode for a campaign."""
+    try:
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Toggle the dry_run flag
+        campaign.dry_run = not campaign.dry_run
+        await session.commit()
+        
+        mode = "DRY RUN" if campaign.dry_run else "LIVE"
+        logger.info(f"[TOGGLE] Campaign {campaign_id} switched to {mode} mode")
+        
+        return CampaignActionResponse(
+            success=True,
+            message=f"Campaign switched to {mode} mode",
+            campaign_id=campaign_id,
+            new_status=campaign.status.value,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[TOGGLE] Failed to toggle dry-run: {e}")
+        raise HTTPException(status_code=500, detail=f"Toggle failed: {str(e)}")
+
+
 async def _process_recipient_row(session: AsyncSession, campaign: Campaign, row: CampaignRow):
     """Process a single recipient row."""
     graph = create_recipient_graph(session)
@@ -576,7 +608,10 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     from app.services.gmail_client import GmailClient
     from app.services.idempotency_service import IdempotencyService
     from app.core.security import decrypt_token, generate_idempotency_key
+    from app.core.logging import mask_sensitive_data
     import json
+    
+    logger.info(f"[API_SEND] Starting send for row {row.id}, email: {mask_sensitive_data(row.recipient_email or '', 3)}")
     
     # Get the draft
     result = await session.execute(
@@ -585,13 +620,17 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     draft = result.scalar_one_or_none()
     
     if not draft:
+        logger.error(f"[API_SEND] No email draft found for row {row.id}")
         row.status = RowStatus.FAILED
         row.error_message = "No email draft found"
         await session.flush()
         return
     
+    logger.info(f"[API_SEND] Found draft: {draft.id}, subject: {draft.subject[:50]}...")
+    
     # Get Gmail account
     if not campaign.gmail_account_id:
+        logger.error(f"[API_SEND] No Gmail account connected for campaign {campaign.id}")
         row.status = RowStatus.FAILED
         row.error_message = "No Gmail account connected"
         await session.flush()
@@ -599,10 +638,13 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     
     gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
     if not gmail_account:
+        logger.error(f"[API_SEND] Gmail account not found: {campaign.gmail_account_id}")
         row.status = RowStatus.FAILED
         row.error_message = "Gmail account not found"
         await session.flush()
         return
+    
+    logger.info(f"[API_SEND] Using Gmail account: {gmail_account.email}, has_token: {bool(gmail_account.token_encrypted)}")
     
     # Check idempotency
     idempotency_service = IdempotencyService()
@@ -614,12 +656,14 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     )
     
     if existing and existing.status == SendStatus.SENT:
+        logger.info(f"[API_SEND] Duplicate found, already sent: {existing.id}")
         row.status = RowStatus.SENT
         await session.flush()
         return
     
     # Check dry-run
     if campaign.dry_run:
+        logger.info(f"[API_SEND] Dry-run mode, recording preview only")
         await idempotency_service.record_send_attempt(
             session=session,
             campaign_row_id=row.id,
@@ -636,8 +680,19 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     
     # Actually send
     try:
+        logger.info(f"[API_SEND] Decrypting token for {gmail_account.email}")
+        
+        if not gmail_account.token_encrypted:
+            raise ValueError("Gmail token not found. Please reconnect your Gmail account.")
+        
         token_data = json.loads(decrypt_token(gmail_account.token_encrypted))
+        logger.info(f"[API_SEND] Token decrypted, creating Gmail client...")
+        
         client = GmailClient(token_data)
+        
+        logger.info(f"[API_SEND] Sending email via Gmail API...")
+        logger.info(f"[API_SEND]   From: {gmail_account.email}")
+        logger.info(f"[API_SEND]   To: {mask_sensitive_data(row.recipient_email or '', 3)}")
         
         result = client.send_email(
             sender=gmail_account.email,
@@ -646,6 +701,8 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
             plain_text=draft.plain_text_body,
             html_body=draft.html_body,
         )
+        
+        logger.info(f"[API_SEND] Email sent successfully! Message ID: {result.get('message_id')}")
         
         await idempotency_service.record_send_attempt(
             session=session,
@@ -661,10 +718,12 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         row.status = RowStatus.SENT
         await session.flush()
         
-        logger.info(f"Email sent to {row.recipient_email}")
+        logger.info(f"[API_SEND] Email sent to {mask_sensitive_data(row.recipient_email or '', 3)}")
         
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"[API_SEND] Failed to send email: {type(e).__name__}: {str(e)}")
+        import traceback
+        logger.error(f"[API_SEND] Stack trace: {traceback.format_exc()}")
         
         await idempotency_service.record_send_attempt(
             session=session,

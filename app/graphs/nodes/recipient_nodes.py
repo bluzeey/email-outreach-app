@@ -303,15 +303,18 @@ class RecipientGraphNodes:
     
     async def send_email_via_gmail(self, state: RecipientGraphState) -> RecipientGraphState:
         """Send email via Gmail."""
-        logger.info(f"Sending email for row {state.recipient_id}")
+        logger.info(f"[SEND] Starting email send for row {state.recipient_id}")
         
         try:
             # Get campaign row and draft
             campaign_row = await self.session.get(CampaignRow, state.recipient_id)
             if not campaign_row:
+                logger.error(f"[SEND] Campaign row not found: {state.recipient_id}")
                 state.errors.append("Campaign row not found")
                 state.status = "failed"
                 return state
+            
+            logger.info(f"[SEND] Found campaign row: {campaign_row.id}, email: {mask_sensitive_data(campaign_row.recipient_email or '', 3)}")
             
             # Get email draft
             from sqlalchemy import select
@@ -321,22 +324,37 @@ class RecipientGraphNodes:
             draft = result.scalar_one_or_none()
             
             if not draft:
+                logger.error(f"[SEND] Email draft not found for row: {state.recipient_id}")
                 state.errors.append("Email draft not found")
                 state.status = "failed"
                 return state
             
+            logger.info(f"[SEND] Found email draft: {draft.id}, subject: {draft.subject[:50]}...")
+            
             # Get campaign and Gmail account
             campaign = await self.session.get(Campaign, state.campaign_id)
-            if not campaign or not campaign.gmail_account_id:
+            if not campaign:
+                logger.error(f"[SEND] Campaign not found: {state.campaign_id}")
+                state.errors.append("Campaign not found")
+                state.status = "failed"
+                return state
+            
+            logger.info(f"[SEND] Found campaign: {campaign.id}, gmail_account_id: {campaign.gmail_account_id}, dry_run: {campaign.dry_run}")
+            
+            if not campaign.gmail_account_id:
+                logger.error(f"[SEND] Gmail account not connected for campaign: {state.campaign_id}")
                 state.errors.append("Gmail account not connected")
                 state.status = "failed"
                 return state
             
             gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
             if not gmail_account:
+                logger.error(f"[SEND] Gmail account not found: {campaign.gmail_account_id}")
                 state.errors.append("Gmail account not found")
                 state.status = "failed"
                 return state
+            
+            logger.info(f"[SEND] Found Gmail account: {gmail_account.email}, sender_name: {gmail_account.sender_name}")
             
             # Check idempotency
             from app.core.security import generate_idempotency_key
@@ -348,6 +366,8 @@ class RecipientGraphNodes:
                 body=draft.plain_text_body,
             )
             
+            logger.info(f"[SEND] Checking idempotency with key: {idempotency_key[:20]}...")
+            
             existing = await self.idempotency_service.check_duplicate(
                 self.session, state.campaign_id,
                 campaign_row.recipient_email or "",
@@ -355,6 +375,7 @@ class RecipientGraphNodes:
             )
             
             if existing and existing.status == SendStatus.SENT:
+                logger.info(f"[SEND] Duplicate found, already sent: {existing.id}")
                 state.send_result = {
                     "success": True,
                     "duplicate": True,
@@ -371,6 +392,7 @@ class RecipientGraphNodes:
             
             # Check if dry-run mode
             if state.dry_run or campaign.dry_run:
+                logger.info(f"[SEND] Dry-run mode, skipping actual send. state.dry_run={state.dry_run}, campaign.dry_run={campaign.dry_run}")
                 # Record as dry-run preview
                 send_event = await self.idempotency_service.record_send_attempt(
                     session=self.session,
@@ -401,13 +423,26 @@ class RecipientGraphNodes:
             try:
                 from app.core.security import decrypt_token
                 
+                logger.info(f"[SEND] Decrypting token for Gmail account: {gmail_account.email}")
+                
                 # Decrypt token
+                if not gmail_account.token_encrypted:
+                    logger.error(f"[SEND] No encrypted token found for Gmail account: {gmail_account.email}")
+                    raise ValueError("Gmail token not found or expired. Please reconnect your Gmail account.")
+                
                 token_data = json.loads(decrypt_token(gmail_account.token_encrypted))
+                logger.info(f"[SEND] Token decrypted successfully, expires at: {token_data.get('expiry', 'unknown')}")
                 
                 # Create Gmail client
+                logger.info(f"[SEND] Creating Gmail client...")
                 client = GmailClient(token_data)
                 
                 # Send email
+                logger.info(f"[SEND] Sending email via Gmail API...")
+                logger.info(f"[SEND]   From: {gmail_account.email}")
+                logger.info(f"[SEND]   To: {mask_sensitive_data(campaign_row.recipient_email or '', 3)}")
+                logger.info(f"[SEND]   Subject: {draft.subject[:50]}...")
+                
                 result = client.send_email(
                     sender=gmail_account.email,
                     to=campaign_row.recipient_email or "",
@@ -415,6 +450,8 @@ class RecipientGraphNodes:
                     plain_text=draft.plain_text_body,
                     html_body=draft.html_body,
                 )
+                
+                logger.info(f"[SEND] Email sent successfully! Message ID: {result.get('message_id')}")
                 
                 # Record success
                 send_event = await self.idempotency_service.record_send_attempt(
@@ -440,13 +477,15 @@ class RecipientGraphNodes:
                 await self.session.commit()
                 
                 logger.info(
-                    "Email sent successfully",
+                    "[SEND] Email sent successfully",
                     recipient=mask_sensitive_data(campaign_row.recipient_email or "", 3),
                     message_id=result.get("message_id"),
                 )
                 
             except Exception as e:
-                logger.error(f"Gmail send failed: {e}")
+                logger.error(f"[SEND] Gmail send failed with error: {type(e).__name__}: {str(e)}")
+                import traceback
+                logger.error(f"[SEND] Stack trace: {traceback.format_exc()}")
                 
                 # Record failure
                 send_event = await self.idempotency_service.record_send_attempt(
@@ -463,6 +502,7 @@ class RecipientGraphNodes:
                 state.send_result = {
                     "success": False,
                     "error": str(e),
+                    "error_type": type(e).__name__,
                     "send_event_id": send_event.id,
                 }
                 state.status = "failed"
@@ -474,10 +514,13 @@ class RecipientGraphNodes:
                 await self.session.commit()
         
         except Exception as e:
-            logger.error(f"Send process failed: {e}")
+            logger.error(f"[SEND] Send process failed: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"[SEND] Stack trace: {traceback.format_exc()}")
             state.errors.append(f"Send process error: {str(e)}")
             state.status = "failed"
         
+        logger.info(f"[SEND] Final status for row {state.recipient_id}: {state.status}")
         return state
     
     async def persist_send_outcome(self, state: RecipientGraphState) -> RecipientGraphState:

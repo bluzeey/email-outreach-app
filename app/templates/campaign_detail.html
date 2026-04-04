@@ -366,6 +366,12 @@
             }
             
             buttons.push(`<button onclick="exportCampaign()" class="btn btn-secondary">⬇ Export</button>`);
+            
+            // Add toggle dry-run button
+            const dryRunLabel = campaign.dry_run ? '🚀 Go Live' : '🧪 Switch to Dry Run';
+            const dryRunClass = campaign.dry_run ? 'btn-success' : 'btn-secondary';
+            buttons.push(`<button onclick="toggleDryRun()" class="btn ${dryRunClass}">${dryRunLabel}</button>`);
+            
             buttons.push(`<button onclick="deleteCampaign()" class="btn btn-danger">🗑 Delete</button>`);
             
             return buttons.join('');
@@ -818,6 +824,24 @@
                 }
             } catch (error) {
                 alert('Export failed: ' + error.message);
+            }
+        }
+        
+        async function toggleDryRun() {
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/toggle-dry-run`, {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Failed to toggle mode: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
             }
         }
         

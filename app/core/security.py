@@ -2,48 +2,38 @@
 
 import hashlib
 import secrets
-from pathlib import Path
 from typing import Optional
 
 from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
-# Path to store the auto-generated encryption key
-KEY_FILE_PATH = Path(".encryption_key")
-
 
 def get_encryption_key() -> bytes:
-    """Get or generate encryption key.
+    """Get encryption key from ENCRYPTION_KEY env variable.
     
-    Priority:
-    1. ENCRYPTION_KEY from environment/settings
-    2. Key from .encryption_key file (auto-generated)
-    3. Generate new key and save to file
+    Raises:
+        ValueError: If ENCRYPTION_KEY is not set or is invalid
     """
-    # 1. Use provided key from environment if available
-    if settings.ENCRYPTION_KEY:
-        # Ensure it's properly formatted as base64 (Fernet keys are 32 bytes base64-encoded = 43 chars + padding)
-        key = settings.ENCRYPTION_KEY.encode()
-        # Validate the key format
-        try:
-            Fernet(key)
-            return key
-        except ValueError:
-            raise ValueError(
-                "Invalid ENCRYPTION_KEY format. Must be a valid Fernet key (32 bytes base64-encoded). "
-                "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
-            )
+    if not settings.ENCRYPTION_KEY:
+        raise ValueError(
+            "ENCRYPTION_KEY is not set. "
+            "Generate a key with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+            "Then add it to your .env file as ENCRYPTION_KEY=<key>"
+        )
     
-    # 2. Check for existing key file
-    if KEY_FILE_PATH.exists():
-        return KEY_FILE_PATH.read_bytes().strip()
+    key = settings.ENCRYPTION_KEY.encode()
     
-    # 3. Generate a new key and save it
-    key = Fernet.generate_key()
-    KEY_FILE_PATH.write_bytes(key)
-    # Set restrictive permissions (owner read/write only)
-    KEY_FILE_PATH.chmod(0o600)
+    # Validate the key format
+    try:
+        Fernet(key)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid ENCRYPTION_KEY format: {e}. "
+            "Must be a valid Fernet key (32 bytes base64-encoded). "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    
     return key
 
 

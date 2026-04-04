@@ -1,6 +1,7 @@
 """Campaign API endpoints."""
 
 import asyncio
+import json
 import os
 import uuid
 from datetime import datetime
@@ -751,7 +752,17 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         if not gmail_account.token_encrypted:
             raise ValueError("Gmail token not found. Please reconnect your Gmail account.")
         
-        token_data = json.loads(decrypt_token(gmail_account.token_encrypted))
+        # Decrypt and parse token
+        try:
+            decrypted = decrypt_token(gmail_account.token_encrypted)
+            token_data = json.loads(decrypted)
+        except json.JSONDecodeError as e:
+            logger.error(f"[API_SEND] Token decryption produced invalid JSON - encryption key mismatch or corrupted token")
+            raise ValueError("Gmail authentication token is corrupted. Please go to Settings and reconnect your Gmail account.") from e
+        except Exception as e:
+            logger.error(f"[API_SEND] Token decryption failed: {type(e).__name__}: {str(e)}")
+            raise ValueError("Failed to decrypt Gmail token. Please go to Settings and reconnect your Gmail account.") from e
+        
         logger.info(f"[API_SEND] Token decrypted, creating Gmail client...")
         
         client = GmailClient(token_data)
@@ -787,11 +798,10 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
         logger.info(f"[API_SEND] Email sent to {mask_sensitive_data(row.recipient_email or '', 3)}")
         
     except Exception as e:
-        # Handle specific token decryption errors
-        from cryptography.fernet import InvalidToken
-        if isinstance(e, InvalidToken):
-            logger.error(f"[API_SEND] Token decryption failed - encryption key may have changed. User needs to reconnect Gmail account.")
-            error_msg = "Gmail authentication token is invalid. Please go to Settings and reconnect your Gmail account."
+        # Handle specific token errors
+        if isinstance(e, ValueError) and "Gmail" in str(e):
+            logger.error(f"[API_SEND] {str(e)}")
+            error_msg = str(e)
         else:
             logger.error(f"[API_SEND] Failed to send email: {type(e).__name__}: {str(e)}")
             import traceback

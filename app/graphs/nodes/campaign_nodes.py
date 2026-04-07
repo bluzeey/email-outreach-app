@@ -199,8 +199,9 @@ class CampaignGraphNodes:
                 plan.context = state.context
                 logger.debug(f"Added context to plan for sample drafts: {plan.context[:50]}...")
             
-            # Get sender name from Gmail account if available
+            # Get sender name and signature from Gmail account if available
             sender_name = None
+            signature = None
             try:
                 from app.db.models import Campaign
                 campaign_result = await self.session.execute(
@@ -211,17 +212,18 @@ class CampaignGraphNodes:
                     gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
                     if gmail_account:
                         sender_name = gmail_account.sender_name
-                        logger.debug(f"Using sender name: {sender_name}")
+                        signature = gmail_account.signature
+                        logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
             except Exception as e:
-                logger.warning(f"Could not fetch sender name: {e}")
+                logger.warning(f"Could not fetch sender name/signature: {e}")
             
             # Load sample rows
             df = DataLoader.load_file(state.csv_path)
             sample_rows = CSVProfiler.get_sample_rows(df, 3)
             
-            # Generate drafts with sender name
+            # Generate drafts with sender name and signature
             draft_service = DraftGenerationService()
-            drafts = await draft_service.generate_sample_drafts(schema, plan, sample_rows, 3, sender_name)
+            drafts = await draft_service.generate_sample_drafts(schema, plan, sample_rows, 3, sender_name, signature)
             
             state.sample_drafts = [d.model_dump() for d in drafts]
             logger.info(f"Generated {len(drafts)} sample drafts")
@@ -336,6 +338,24 @@ class CampaignGraphNodes:
             
             draft_service = DraftGenerationService()
             
+            # Get sender name and signature from Gmail account if available
+            sender_name = None
+            signature = None
+            try:
+                from app.db.models import Campaign
+                campaign_result = await self.session.execute(
+                    select(Campaign).where(Campaign.id == state.campaign_id)
+                )
+                campaign = campaign_result.scalar_one_or_none()
+                if campaign and campaign.gmail_account_id:
+                    gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
+                    if gmail_account:
+                        sender_name = gmail_account.sender_name
+                        signature = gmail_account.signature
+                        logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
+            except Exception as e:
+                logger.warning(f"Could not fetch sender name/signature: {e}")
+            
             # Create rows - skip rows without valid email
             row_ids = []
             skipped_count = 0
@@ -411,7 +431,7 @@ class CampaignGraphNodes:
                 
                 # Generate email draft for preview (AFTER row is created)
                 try:
-                    draft = await draft_service.generate_draft(schema, plan, row_data)
+                    draft = await draft_service.generate_draft(schema, plan, row_data, sender_name, signature)
                     
                     # Save draft to DB
                     email_draft = EmailDraft(

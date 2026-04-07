@@ -30,6 +30,7 @@ class DraftGenerationService:
         campaign_plan: CampaignPlan,
         row_data: dict,
         sender_name: str | None = None,
+        signature: str | None = None,
     ) -> GeneratedEmail:
         """Generate personalized email draft for a single row."""
         
@@ -47,7 +48,7 @@ class DraftGenerationService:
         if self.llm_client:
             try:
                 draft = await self._generate_with_llm(
-                    schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name
+                    schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name, signature
                 )
                 if draft:
                     return draft
@@ -56,7 +57,7 @@ class DraftGenerationService:
         
         # Fallback to template-based generation
         return self._generate_with_template(
-            schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name
+            schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name, signature
         )
     
     def _build_personalization_context(
@@ -99,6 +100,7 @@ class DraftGenerationService:
         personalization_context: dict,
         recipient_email: str | None = None,
         sender_name: str | None = None,
+        signature: str | None = None,
     ) -> GeneratedEmail | None:
         """Generate email using LLM."""
         if not self.llm_client:
@@ -115,10 +117,13 @@ class DraftGenerationService:
 
 """
         
-        # Include sender information
+        # Determine sign-off instruction based on signature or sender_name
         sender_section = ""
         sign_off_instruction = ""
-        if sender_name:
+        if signature:
+            # Custom signature will be added separately, AI should just end body naturally
+            sign_off_instruction = '- End the body naturally after the call-to-action. Do NOT add any sign-off or signature - it will be added separately.'
+        elif sender_name:
             sender_section = f"""Sender: {sender_name}
 
 """
@@ -143,8 +148,8 @@ Do Not:
 
 Generate an email with:
 1. Subject line (max 60 characters, no quotes)
-2. Plain text body (concise, under 150 words)
-3. HTML version of the body (basic formatting with <p> tags)
+2. Plain text body (concise, under 150 words) - do NOT include the signature in the body, it will be added separately
+3. HTML version of the body (basic formatting with <p> tags) - do NOT include the signature in the body, it will be added separately
 
 Requirements:
 - Reference the product/service from the Campaign Context naturally
@@ -184,12 +189,19 @@ Respond with ONLY valid JSON:
                 if field not in data or not data[field]:
                     raise ValueError(f"Missing required field: {field}")
             
-            # Post-process: Ensure signature is present
+            # Post-process: Add signature
             plain_body = data["plain_text_body"]
             html_body = data["html_body"]
             
-            # Add sender name to signature if missing
-            if sender_name:
+            # Use custom signature if provided, otherwise use sender_name
+            if signature:
+                # Add custom signature
+                plain_body = plain_body.rstrip() + f"\n\n{signature}"
+                # Convert signature to HTML (simple conversion: newlines to <br>)
+                signature_html = signature.replace('\n', '<br>')
+                html_body = html_body.rstrip() + f"\n\n<p>{signature_html}</p>"
+            elif sender_name:
+                # Add sender name to signature if missing
                 # Check if signature ends with sender name
                 if not plain_body.strip().endswith(sender_name):
                     # Remove any existing "Kind regards" line
@@ -244,6 +256,7 @@ Respond with ONLY valid JSON:
         personalization_context: dict,
         recipient_email: str | None = None,
         sender_name: str | None = None,
+        signature: str | None = None,
     ) -> GeneratedEmail:
         """Generate email using templates (fallback)."""
         
@@ -262,10 +275,13 @@ Respond with ONLY valid JSON:
         else:
             subject = "Quick question"
         
-        # Build sign-off
-        sign_off = "Kind regards"
-        if sender_name:
+        # Build sign-off using signature if available, otherwise sender_name, or default
+        if signature:
+            sign_off = signature
+        elif sender_name:
             sign_off = f"Kind regards,\n{sender_name}"
+        else:
+            sign_off = "Kind regards"
         
         # Generate body
         plain_body = f"""Hi {first_name},
@@ -285,7 +301,12 @@ I came across {company} and wanted to reach out.{context_intro}
             html_body += f"<p>{campaign_plan.context}</p>\n\n"
         html_body += f"<p>{campaign_plan.inferred_goal}</p>\n\n"
         html_body += f"<p>{campaign_plan.cta}.</p>\n\n"
-        if sender_name:
+        
+        # Add signature to HTML
+        if signature:
+            signature_html = signature.replace('\n', '<br>')
+            html_body += f"<p>{signature_html}</p>"
+        elif sender_name:
             html_body += f"<p>Kind regards,<br>{sender_name}</p>"
         else:
             html_body += "<p>Kind regards</p>"
@@ -309,13 +330,14 @@ I came across {company} and wanted to reach out.{context_intro}
         sample_rows: list[dict],
         count: int = 3,
         sender_name: str | None = None,
+        signature: str | None = None,
     ) -> list[GeneratedEmail]:
         """Generate sample drafts for review."""
         drafts = []
         
         for row in sample_rows[:count]:
             try:
-                draft = await self.generate_draft(schema, campaign_plan, row, sender_name)
+                draft = await self.generate_draft(schema, campaign_plan, row, sender_name, signature)
                 drafts.append(draft)
             except Exception as e:
                 logger.error(f"Failed to generate sample draft: {e}")

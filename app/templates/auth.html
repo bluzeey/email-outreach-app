@@ -160,6 +160,83 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        /* Signature section styles */
+        .signature-section {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--color-gray-200);
+            text-align: left;
+        }
+        
+        .signature-header {
+            margin-bottom: 0.75rem;
+        }
+        
+        .signature-header h4 {
+            margin: 0 0 0.25rem 0;
+            font-size: 1rem;
+            color: var(--color-gray-800);
+        }
+        
+        .signature-help {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+        }
+        
+        .signature-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 0.95rem;
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .signature-input:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        .signature-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        
+        .signature-status {
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            min-height: 1.5rem;
+        }
+        
+        .signature-status.success {
+            color: var(--color-success);
+        }
+        
+        .signature-status.error {
+            color: var(--color-danger);
+        }
+        
+        .signature-preview {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: var(--color-gray-50);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+        }
+        
+        .signature-preview pre {
+            margin: 0.5rem 0 0 0;
+            white-space: pre-wrap;
+            font-family: inherit;
+            color: var(--color-gray-700);
+        }
     </style>
 </head>
 <body>
@@ -263,6 +340,35 @@
                             Connected on ${new Date(data.account.connected_at).toLocaleDateString()}
                         </p>
                     `;
+                    
+                    // Add signature editor section
+                    const signatureSection = document.createElement('div');
+                    signatureSection.className = 'signature-section';
+                    signatureSection.innerHTML = `
+                        <div class="signature-header">
+                            <h4>✍️ Email Signature</h4>
+                            <p class="signature-help">This signature will be added at the end of all emails sent from this account.</p>
+                        </div>
+                        <textarea 
+                            id="signature-input" 
+                            class="signature-input" 
+                            rows="4" 
+                            placeholder="Enter your signature here...&#10;Example:&#10;Best regards,&#10;John Doe&#10;CEO at Acme Corp"
+                        >${data.account.signature || ''}</textarea>
+                        <div class="signature-actions">
+                            <button onclick="saveSignature()" class="btn btn-primary btn-small">Save Signature</button>
+                            <button onclick="clearSignature()" class="btn btn-secondary btn-small">Clear</button>
+                        </div>
+                        <div id="signature-status" class="signature-status"></div>
+                        ${data.account.signature ? `
+                            <div class="signature-preview">
+                                <strong>Preview:</strong>
+                                <pre>${data.account.signature}</pre>
+                            </div>
+                        ` : ''}
+                    `;
+                    statusCard.appendChild(signatureSection);
+                    
                     connectBtn.style.display = 'none';
                     disconnectBtn.style.display = 'inline-block';
                 } else {
@@ -316,6 +422,47 @@
                 alert('Error: ' + error.message);
             }
         });
+        
+        async function saveSignature() {
+            const signatureInput = document.getElementById('signature-input');
+            const statusDiv = document.getElementById('signature-status');
+            const signature = signatureInput.value.trim();
+            
+            statusDiv.textContent = 'Saving...';
+            statusDiv.className = 'signature-status';
+            
+            try {
+                const response = await fetch('/auth/signature', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signature: signature || null })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    statusDiv.textContent = '✓ Signature saved successfully';
+                    statusDiv.className = 'signature-status success';
+                    setTimeout(() => {
+                        statusDiv.textContent = '';
+                        statusDiv.className = 'signature-status';
+                    }, 3000);
+                } else {
+                    statusDiv.textContent = '✗ Failed to save: ' + (data.detail || data.message || 'Unknown error');
+                    statusDiv.className = 'signature-status error';
+                }
+            } catch (error) {
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                statusDiv.className = 'signature-status error';
+            }
+        }
+        
+        function clearSignature() {
+            const signatureInput = document.getElementById('signature-input');
+            if (signatureInput) {
+                signatureInput.value = '';
+            }
+        }
         
         checkAuthStatus();
     </script>

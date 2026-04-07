@@ -16,6 +16,7 @@ from app.schemas.auth import (
     AuthStatusResponse,
     AuthUrlResponse,
     GmailAccountResponse,
+    UpdateSignatureRequest,
 )
 from app.services.gmail_client import (
     get_authorization_url,
@@ -155,6 +156,7 @@ async def get_auth_status(
                     id=account.id,
                     email=account.email,
                     sender_name=account.sender_name,
+                    signature=account.signature,
                     status=account.status,
                     connected_at=account.connected_at.isoformat() if account.connected_at else "",
                     scopes=account.scopes or [],
@@ -166,3 +168,38 @@ async def get_auth_status(
     except Exception as e:
         logger.error(f"Failed to get auth status: {e}")
         raise HTTPException(status_code=500, detail="Failed to get authentication status")
+
+
+@router.put("/signature")
+async def update_signature(
+    request: UpdateSignatureRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update the signature for the connected Gmail account."""
+    try:
+        # Get connected account
+        result = await session.execute(
+            select(GmailAccount).where(GmailAccount.status == "active")
+        )
+        account = result.scalar_one_or_none()
+        
+        if not account:
+            raise HTTPException(status_code=404, detail="No connected Gmail account found")
+        
+        # Update signature
+        account.signature = request.signature
+        await session.commit()
+        
+        logger.info(f"Updated signature for Gmail account: {account.email}")
+        
+        return {
+            "success": True,
+            "message": "Signature updated successfully",
+            "signature": account.signature,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update signature: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update signature")

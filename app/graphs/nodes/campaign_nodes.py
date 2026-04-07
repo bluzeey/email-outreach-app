@@ -1,6 +1,7 @@
 """Campaign graph nodes."""
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -189,7 +190,6 @@ class CampaignGraphNodes:
         try:
             from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
             from app.services.draft_generation_service import DraftGenerationService
-            from sqlalchemy import select
             
             schema = CsvSchemaInference(**state.inferred_schema)
             plan = CampaignPlan(**state.campaign_plan)
@@ -208,12 +208,23 @@ class CampaignGraphNodes:
                     select(Campaign).where(Campaign.id == state.campaign_id)
                 )
                 campaign = campaign_result.scalar_one_or_none()
+                
+                # Try to get Gmail account - either from campaign or from active account
+                gmail_account = None
                 if campaign and campaign.gmail_account_id:
                     gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
-                    if gmail_account:
-                        sender_name = gmail_account.sender_name
-                        signature = gmail_account.signature
-                        logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
+                
+                # If no campaign association, get the active Gmail account
+                if not gmail_account:
+                    result = await self.session.execute(
+                        select(GmailAccount).where(GmailAccount.status == "active")
+                    )
+                    gmail_account = result.scalar_one_or_none()
+                
+                if gmail_account:
+                    sender_name = gmail_account.sender_name
+                    signature = gmail_account.signature
+                    logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
             except Exception as e:
                 logger.warning(f"Could not fetch sender name/signature: {e}")
             
@@ -347,12 +358,23 @@ class CampaignGraphNodes:
                     select(Campaign).where(Campaign.id == state.campaign_id)
                 )
                 campaign = campaign_result.scalar_one_or_none()
+                
+                # Try to get Gmail account - either from campaign or from active account
+                gmail_account = None
                 if campaign and campaign.gmail_account_id:
                     gmail_account = await self.session.get(GmailAccount, campaign.gmail_account_id)
-                    if gmail_account:
-                        sender_name = gmail_account.sender_name
-                        signature = gmail_account.signature
-                        logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
+                
+                # If no campaign association, get the active Gmail account
+                if not gmail_account:
+                    result = await self.session.execute(
+                        select(GmailAccount).where(GmailAccount.status == "active")
+                    )
+                    gmail_account = result.scalar_one_or_none()
+                
+                if gmail_account:
+                    sender_name = gmail_account.sender_name
+                    signature = gmail_account.signature
+                    logger.debug(f"Using sender name: {sender_name}, signature: {signature[:50] if signature else 'None'}...")
             except Exception as e:
                 logger.warning(f"Could not fetch sender name/signature: {e}")
             

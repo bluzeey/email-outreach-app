@@ -232,7 +232,7 @@ async def _append_leads_to_campaign(
 
     - Skip duplicate emails (already in campaign or duplicates in new file)
     - Skip invalid/placeholder emails
-    - Create rows with QUEUED status so they can be processed
+    - Create rows with QUEUED status (drafts will be generated during run)
     - If campaign was COMPLETED, move to PAUSED so user can Run again
     """
     campaign_id = campaign.id
@@ -272,31 +272,9 @@ async def _append_leads_to_campaign(
     skipped_invalid = 0
     seen_in_file = set()  # Track duplicates within the same file
 
-    from app.services.draft_generation_service import DraftGenerationService
+    rows_to_add = []
 
-    draft_service = DraftGenerationService()
-    schema_obj = None
-    plan_obj = None
-
-    # Parse schema and plan objects for draft generation
-    try:
-        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
-        schema_obj = CsvSchemaInference(**schema)
-        plan_obj = CampaignPlan(**(campaign.campaign_plan_json or {}))
-    except Exception as e:
-        logger.warning(f"Could not parse schema/plan for draft generation: {e}")
-
-    # Get sender info for drafts
-    sender_name = None
-    signature = None
-    if campaign.gmail_account_id:
-        from app.db.models import GmailAccount
-        gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
-        if gmail_account:
-            sender_name = gmail_account.sender_name
-            signature = gmail_account.signature
-
-    # Process each row
+    # First pass: collect valid rows (no DB operations yet)
     for idx, row_data in df.iterrows():
         # Get email from row
         email_raw = str(row_data.get(email_col, "")).strip()
@@ -318,65 +296,40 @@ async def _append_leads_to_campaign(
             continue
 
         seen_in_file.add(email_lower)
+        existing_emails.add(email_lower)  # Track for dedupe within this batch
 
         # Prepare row data
         row_dict = row_data.to_dict()
 
-        # Create CampaignRow with QUEUED status
-        try:
+        # Create row object (don't add to session yet)
+        rows_to_add.append({
+            'row_number': next_row_number,
+            'recipient_email': email_raw,
+            'raw_row_json': row_dict,
+        })
+        next_row_number += 1
+
+    # Second pass: bulk insert with transaction handling
+    # Use a single transaction for all inserts to minimize SQLite locking
+    try:
+        for row_data in rows_to_add:
             campaign_row = CampaignRow(
                 campaign_id=campaign_id,
-                row_number=next_row_number,
-                raw_row_json=row_dict,
-                recipient_email=email_raw,
-                status=RowStatus.QUEUED,
+                row_number=row_data['row_number'],
+                raw_row_json=row_data['raw_row_json'],
+                recipient_email=row_data['recipient_email'],
+                status=RowStatus.QUEUED,  # Keep as QUEUED - drafts will be generated during run
             )
             session.add(campaign_row)
-            await session.flush()  # Get the row ID
-
-            # Generate draft immediately for the new row
-            if schema_obj and plan_obj:
-                try:
-                    draft = await draft_service.generate_draft(
-                        schema_obj, plan_obj, row_dict, sender_name, signature
-                    )
-
-                    # Save draft to DB
-                    from app.db.models import EmailDraft
-                    email_draft = EmailDraft(
-                        campaign_row_id=campaign_row.id,
-                        subject=draft.subject,
-                        plain_text_body=draft.plain_text_body,
-                        html_body=draft.html_body,
-                        personalization_fields_used=draft.personalization_fields_used,
-                        key_claims_used=draft.key_claims_used,
-                        generation_confidence=int(draft.confidence * 100),
-                        needs_human_review=draft.needs_human_review,
-                        review_reasons=draft.review_reasons,
-                    )
-                    session.add(email_draft)
-
-                    # Update row status to GENERATED (ready to send)
-                    campaign_row.status = RowStatus.GENERATED
-
-                except Exception as draft_error:
-                    logger.error(f"Failed to generate draft for appended row {campaign_row.id}: {draft_error}")
-                    # Keep as QUEUED - will be generated during run
-
             added_count += 1
-            next_row_number += 1
 
-            # Commit every 10 rows to avoid memory issues
-            if added_count % 10 == 0:
-                await session.commit()
+        # Single commit for all rows
+        await session.commit()
 
-        except Exception as row_error:
-            logger.error(f"Failed to create row for email {email_raw}: {row_error}")
-            # Continue with next row
-            continue
-
-    # Final commit for remaining rows
-    await session.commit()
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Failed to insert rows: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
     # Update campaign totals
     total_rows_result = await session.execute(
@@ -388,6 +341,7 @@ async def _append_leads_to_campaign(
     campaign.totals_json["total_rows"] = total_rows
 
     # If campaign was COMPLETED, move to PAUSED so user can Run again
+    # Also allow running from COMPLETED status by including it in run_campaign
     if campaign.status == CampaignStatus.COMPLETED:
         campaign.status = CampaignStatus.PAUSED
         logger.info(f"Campaign {campaign_id} moved from COMPLETED to PAUSED after adding {added_count} new leads")
@@ -765,31 +719,40 @@ async def approve_campaign(
                 failed += 1
                 await session.commit()
 
-        # Final refresh of totals
-        
-        # Check if all rows are processed
-        total_result = await session.execute(
-            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
+        # Final refresh of totals - check all rows by status
+        from sqlalchemy import func
+
+        status_counts_result = await session.execute(
+            select(CampaignRow.status, func.count(CampaignRow.id))
+            .where(CampaignRow.campaign_id == campaign_id)
+            .group_by(CampaignRow.status)
         )
-        total_rows = len(total_result.scalars().all())
-        
-        # Count actual sent and skipped (not failed)
-        successful_rows = sum(1 for r in pending_rows if r.status == RowStatus.SENT)
-        skipped_rows = sum(1 for r in pending_rows if r.status == RowStatus.SKIPPED)
-        
-        # Only mark COMPLETED when all rows are successfully sent or skipped
+        status_counts = {status.value: count for status, count in status_counts_result}
+
+        total_rows = sum(status_counts.values())
+        # Terminal states: sent, failed, skipped, ineligible
+        terminal_states = {'sent', 'failed', 'skipped', 'ineligible'}
+        completed_rows = sum(status_counts.get(s, 0) for s in terminal_states)
+        pending_rows_count = total_rows - completed_rows
+
+        sent_rows = status_counts.get('sent', 0)
+        failed_rows = status_counts.get('failed', 0)
+
+        logger.info(f"Campaign {campaign_id} approve check: {completed_rows}/{total_rows} in terminal states, {pending_rows_count} pending")
+
+        # Only mark COMPLETED when all rows are in terminal states
         # If there are failures, keep campaign as RUNNING so user can retry
-        if successful_rows + skipped_rows >= total_rows:
+        if pending_rows_count == 0:
             campaign.status = CampaignStatus.COMPLETED
             await session.commit()
-        elif failed > 0:
+        elif failed > 0 or failed_rows > 0:
             # Keep as RUNNING if there are failures (allows retry)
             campaign.status = CampaignStatus.RUNNING
             await session.commit()
-        
+
         return CampaignActionResponse(
             success=True,
-            message=f"Campaign approved! Processed {processed} recipients ({failed} failed, {successful_rows} sent).",
+            message=f"Campaign approved! Processed {processed} recipients ({failed_rows} failed, {sent_rows} sent).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )
@@ -832,15 +795,19 @@ async def run_campaign(
     campaign_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    """Run or resume campaign processing."""
+    """Run or resume campaign processing.
+
+    Handles new leads added to completed campaigns by processing QUEUED rows.
+    """
     try:
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        
-        if campaign.status not in [CampaignStatus.CREATED, CampaignStatus.PAUSED, CampaignStatus.RUNNING]:
+
+        # Allow running from CREATED, PAUSED, RUNNING, or COMPLETED (for newly added leads)
+        if campaign.status not in [CampaignStatus.CREATED, CampaignStatus.PAUSED, CampaignStatus.RUNNING, CampaignStatus.COMPLETED]:
             raise HTTPException(status_code=400, detail=f"Campaign cannot be run in status: {campaign.status.value}")
-        
+
         # Ensure Gmail account is connected
         if not campaign.gmail_account_id:
             # Get default account
@@ -853,27 +820,35 @@ async def run_campaign(
             else:
                 raise HTTPException(status_code=400, detail="No Gmail account connected. Please connect your Gmail first.")
             await session.commit()
-        
+
         # Set status to RUNNING
         campaign.status = CampaignStatus.RUNNING
         await session.commit()
-        
-        # Process pending rows
+
+        # Process QUEUED/NORMALIZED rows (need draft generation + send)
         result = await session.execute(
             select(CampaignRow).where(
                 CampaignRow.campaign_id == campaign_id,
                 CampaignRow.status.in_([RowStatus.QUEUED, RowStatus.NORMALIZED])
             )
         )
-        pending_rows = result.scalars().all()
-        
-        logger.info(f"Found {len(pending_rows)} pending rows to process for campaign {campaign_id}")
-        
-        # Process each row
-        # Commit after each row for real-time status updates in the UI
+        process_rows = result.scalars().all()
+
+        # Get GENERATED rows (ready to send - drafts already exist)
+        result = await session.execute(
+            select(CampaignRow).where(
+                CampaignRow.campaign_id == campaign_id,
+                CampaignRow.status == RowStatus.GENERATED
+            )
+        )
+        generated_rows = result.scalars().all()
+
+        logger.info(f"Found {len(process_rows)} rows to process (generate+send), {len(generated_rows)} rows ready to send for campaign {campaign_id}")
+
+        # Process QUEUED/NORMALIZED rows (generate draft + send)
         processed = 0
         failed = 0
-        for row in pending_rows:
+        for row in process_rows:
             try:
                 await _process_recipient_row(session, campaign, row)
                 processed += 1
@@ -886,30 +861,54 @@ async def run_campaign(
                 failed += 1
                 await session.commit()
 
+        # Send GENERATED rows directly (drafts already exist, just send)
+        for row in generated_rows:
+            try:
+                await _send_recipient_email(session, campaign, row)
+                processed += 1
+                # Commit per row so UI can see real-time status
+                await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to send row {row.id}: {e}")
+                row.status = RowStatus.FAILED
+                row.error_message = str(e)
+                failed += 1
+                await session.commit()
+
         # Final refresh of campaign state
-        
-        # Check if all done
-        total_result = await session.execute(
-            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
+        # Check if all rows are in terminal states (sent, failed, skipped, ineligible)
+        # Count all rows by status
+        from sqlalchemy import func
+
+        status_counts_result = await session.execute(
+            select(CampaignRow.status, func.count(CampaignRow.id))
+            .where(CampaignRow.campaign_id == campaign_id)
+            .group_by(CampaignRow.status)
         )
-        total_rows = len(total_result.scalars().all())
-        
-        # Count successful (not failed) rows
-        successful = processed - failed
-        
-        # Only mark COMPLETED when all rows are successfully processed (no failures)
+        status_counts = {status.value: count for status, count in status_counts_result}
+
+        total_rows = sum(status_counts.values())
+        # Terminal states: sent, failed, skipped, ineligible
+        terminal_states = {'sent', 'failed', 'skipped', 'ineligible'}
+        completed_rows = sum(status_counts.get(s, 0) for s in terminal_states)
+        pending_rows_count = total_rows - completed_rows
+
+        logger.info(f"Campaign {campaign_id} status check: {completed_rows}/{total_rows} in terminal states, {pending_rows_count} pending")
+
+        # Only mark COMPLETED when all rows are in terminal states
         # If there are failures, keep campaign as RUNNING so user can retry
-        if successful >= total_rows:
+        if pending_rows_count == 0:
+            # All rows processed (either sent, failed, skipped, or ineligible)
             campaign.status = CampaignStatus.COMPLETED
             await session.commit()
-        elif failed > 0:
+        elif failed > 0 or status_counts.get('failed', 0) > 0:
             # Keep as RUNNING if there are failures (allows retry)
             campaign.status = CampaignStatus.RUNNING
             await session.commit()
-        
+
         return CampaignActionResponse(
             success=True,
-            message=f"Campaign running. Processed {processed} rows ({failed} failed, {successful} successful).",
+            message=f"Campaign running. Processed {processed} new rows. Total: {completed_rows}/{total_rows} complete ({status_counts.get('failed', 0)} failed).",
             campaign_id=campaign_id,
             new_status=campaign.status.value,
         )
@@ -985,10 +984,13 @@ async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: 
     from app.core.security import parse_gmail_credentials, validate_gmail_token, mask_sensitive_data
     
     logger.info(f"[API_SEND] Starting send for row {row.id}, email: {mask_sensitive_data(row.recipient_email or '', 3)}")
-    
-    # Get the draft
+
+    # Get the draft (latest wins - order by created_at desc, id desc)
     result = await session.execute(
-        select(EmailDraft).where(EmailDraft.campaign_row_id == row.id)
+        select(EmailDraft)
+        .where(EmailDraft.campaign_row_id == row.id)
+        .order_by(EmailDraft.created_at.desc(), EmailDraft.id.desc())
+        .limit(1)
     )
     draft = result.scalar_one_or_none()
     
@@ -1414,21 +1416,24 @@ async def update_recipient_draft(
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        
+
         # Get the row
         row = await session.get(CampaignRow, row_id)
         if not row or row.campaign_id != campaign_id:
             raise HTTPException(status_code=404, detail="Recipient not found")
-        
-        # Get the draft
+
+        # Get the draft (latest wins - order by created_at desc, id desc)
         from sqlalchemy import select
         from app.db.models import EmailDraft
-        
+
         result = await session.execute(
-            select(EmailDraft).where(EmailDraft.campaign_row_id == row_id)
+            select(EmailDraft)
+            .where(EmailDraft.campaign_row_id == row_id)
+            .order_by(EmailDraft.created_at.desc(), EmailDraft.id.desc())
+            .limit(1)
         )
         draft = result.scalar_one_or_none()
-        
+
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found for this recipient")
         
@@ -1562,8 +1567,12 @@ async def get_campaign_progress(
         sent = status_counts.get("sent", 0)
         failed = status_counts.get("failed", 0)
         skipped = status_counts.get("skipped", 0) + status_counts.get("ineligible", 0)
-        processed = total - status_counts.get("queued", 0)
-        
+
+        # Only terminal states count as "processed": sent, failed, skipped, ineligible
+        # Intermediate states (queued, normalized, generated, validated, etc.) are pending
+        terminal_states = {'sent', 'failed', 'skipped', 'ineligible'}
+        processed = sum(status_counts.get(s, 0) for s in terminal_states)
+
         percentage = (processed / total * 100) if total > 0 else 0
         
         return CampaignProgressResponse(

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import CampaignRow, GmailAccount, RowStatus
+from app.db.models import CampaignRow, EmailDraft, GmailAccount, RowStatus
 from app.graphs.state import CampaignGraphState
 from app.services.csv_loader import CSVLoader, DataLoader
 from app.services.csv_profiler import CSVProfiler
@@ -454,24 +454,47 @@ class CampaignGraphNodes:
                 # Generate email draft for preview (AFTER row is created)
                 try:
                     draft = await draft_service.generate_draft(schema, plan, row_data, sender_name, signature)
-                    
-                    # Save draft to DB
-                    email_draft = EmailDraft(
-                        campaign_row_id=campaign_row.id,
-                        subject=draft.subject,
-                        plain_text_body=draft.plain_text_body,
-                        html_body=draft.html_body,
-                        personalization_fields_used=draft.personalization_fields_used,
-                        key_claims_used=draft.key_claims_used,
-                        generation_confidence=int(draft.confidence * 100),
-                        needs_human_review=draft.needs_human_review,
-                        review_reasons=draft.review_reasons,
+
+                    # Save draft to DB (upsert behavior - update existing or create new)
+                    # Check for existing draft first
+                    existing_result = await self.session.execute(
+                        select(EmailDraft)
+                        .where(EmailDraft.campaign_row_id == campaign_row.id)
+                        .order_by(EmailDraft.created_at.desc())
+                        .limit(1)
                     )
-                    self.session.add(email_draft)
-                    
+                    existing_draft = existing_result.scalar_one_or_none()
+
+                    if existing_draft:
+                        # Update existing draft
+                        existing_draft.subject = draft.subject
+                        existing_draft.plain_text_body = draft.plain_text_body
+                        existing_draft.html_body = draft.html_body
+                        existing_draft.personalization_fields_used = draft.personalization_fields_used
+                        existing_draft.key_claims_used = draft.key_claims_used
+                        existing_draft.generation_confidence = int(draft.confidence * 100)
+                        existing_draft.needs_human_review = draft.needs_human_review
+                        existing_draft.review_reasons = draft.review_reasons
+                        logger.debug(f"[DRAFT] Updated existing draft for row {campaign_row.id}")
+                    else:
+                        # Create new draft
+                        email_draft = EmailDraft(
+                            campaign_row_id=campaign_row.id,
+                            subject=draft.subject,
+                            plain_text_body=draft.plain_text_body,
+                            html_body=draft.html_body,
+                            personalization_fields_used=draft.personalization_fields_used,
+                            key_claims_used=draft.key_claims_used,
+                            generation_confidence=int(draft.confidence * 100),
+                            needs_human_review=draft.needs_human_review,
+                            review_reasons=draft.review_reasons,
+                        )
+                        self.session.add(email_draft)
+                        logger.debug(f"[DRAFT] Created new draft for row {campaign_row.id}")
+
                     # Update row status to show draft is ready
                     campaign_row.status = RowStatus.GENERATED
-                    
+
                 except Exception as draft_error:
                     logger.error(f"Failed to generate draft for row {campaign_row.id}: {draft_error}")
                     draft_errors += 1

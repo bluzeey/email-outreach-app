@@ -58,8 +58,12 @@ async def get_sample_drafts(
         
         drafts = []
         for row in rows:
+            # Get draft (latest wins - order by created_at desc, id desc)
             draft_result = await session.execute(
-                select(EmailDraft).where(EmailDraft.campaign_row_id == row.id)
+                select(EmailDraft)
+                .where(EmailDraft.campaign_row_id == row.id)
+                .order_by(EmailDraft.created_at.desc(), EmailDraft.id.desc())
+                .limit(1)
             )
             draft = draft_result.scalar_one_or_none()
             
@@ -195,13 +199,13 @@ async def regenerate_row_draft(
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         
-        # Delete existing draft
+        # Delete ALL existing drafts for this row (safeguard against duplicates)
         result = await session.execute(
             select(EmailDraft).where(EmailDraft.campaign_row_id == row_id)
         )
-        existing = result.scalar_one_or_none()
-        if existing:
-            await session.delete(existing)
+        existing_drafts = result.scalars().all()
+        for draft in existing_drafts:
+            await session.delete(draft)
         
         # Reset row status
         row.status = RowStatus.QUEUED

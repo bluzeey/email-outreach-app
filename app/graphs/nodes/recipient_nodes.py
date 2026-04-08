@@ -211,22 +211,45 @@ class RecipientGraphNodes:
             
             state.generated_email = draft.model_dump()
             state.status = "generated"
-            
-            # Save to DB
+
+            # Save to DB (upsert behavior - update existing or create new)
             campaign_row = await self.session.get(CampaignRow, state.recipient_id)
             if campaign_row:
-                email_draft = EmailDraft(
-                    campaign_row_id=state.recipient_id,
-                    subject=draft.subject,
-                    plain_text_body=draft.plain_text_body,
-                    html_body=draft.html_body,
-                    personalization_fields_used=draft.personalization_fields_used,
-                    key_claims_used=draft.key_claims_used,
-                    generation_confidence=int(draft.confidence * 100),
-                    needs_human_review=draft.needs_human_review,
-                    review_reasons=draft.review_reasons,
+                # Check for existing draft
+                existing_result = await self.session.execute(
+                    select(EmailDraft)
+                    .where(EmailDraft.campaign_row_id == state.recipient_id)
+                    .order_by(EmailDraft.created_at.desc())
+                    .limit(1)
                 )
-                self.session.add(email_draft)
+                existing_draft = existing_result.scalar_one_or_none()
+
+                if existing_draft:
+                    # Update existing draft
+                    existing_draft.subject = draft.subject
+                    existing_draft.plain_text_body = draft.plain_text_body
+                    existing_draft.html_body = draft.html_body
+                    existing_draft.personalization_fields_used = draft.personalization_fields_used
+                    existing_draft.key_claims_used = draft.key_claims_used
+                    existing_draft.generation_confidence = int(draft.confidence * 100)
+                    existing_draft.needs_human_review = draft.needs_human_review
+                    existing_draft.review_reasons = draft.review_reasons
+                    logger.info(f"[DRAFT] Updated existing draft for row {state.recipient_id}")
+                else:
+                    # Create new draft
+                    email_draft = EmailDraft(
+                        campaign_row_id=state.recipient_id,
+                        subject=draft.subject,
+                        plain_text_body=draft.plain_text_body,
+                        html_body=draft.html_body,
+                        personalization_fields_used=draft.personalization_fields_used,
+                        key_claims_used=draft.key_claims_used,
+                        generation_confidence=int(draft.confidence * 100),
+                        needs_human_review=draft.needs_human_review,
+                        review_reasons=draft.review_reasons,
+                    )
+                    self.session.add(email_draft)
+                    logger.info(f"[DRAFT] Created new draft for row {state.recipient_id}")
                 await self.session.commit()
             
         except Exception as e:
@@ -318,10 +341,13 @@ class RecipientGraphNodes:
             
             logger.info(f"[SEND] Found campaign row: {campaign_row.id}, email: {mask_sensitive_data(campaign_row.recipient_email or '', 3)}")
             
-            # Get email draft
+            # Get email draft (latest wins - order by created_at desc, id desc)
             from sqlalchemy import select
             result = await self.session.execute(
-                select(EmailDraft).where(EmailDraft.campaign_row_id == state.recipient_id)
+                select(EmailDraft)
+                .where(EmailDraft.campaign_row_id == state.recipient_id)
+                .order_by(EmailDraft.created_at.desc(), EmailDraft.id.desc())
+                .limit(1)
             )
             draft = result.scalar_one_or_none()
             

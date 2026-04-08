@@ -374,9 +374,11 @@
                 buttons.push(`<button onclick="startSending()" class="btn btn-success">📧 Start Sending</button>`);
                 buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
             }
-            
-            if (['created', 'paused'].includes(campaign.status)) {
-                buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">▶ Run</button>`);
+
+            // Show Run button for CREATED, PAUSED, and COMPLETED (for newly added leads)
+            if (['created', 'paused', 'completed'].includes(campaign.status)) {
+                const runLabel = campaign.status === 'completed' ? '▶ Run (New Leads)' : '▶ Run';
+                buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">${runLabel}</button>`);
             }
             
             if (campaign.status === 'running') {

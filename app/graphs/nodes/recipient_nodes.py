@@ -2,6 +2,7 @@
 
 import json
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -255,7 +256,8 @@ class RecipientGraphNodes:
         except Exception as e:
             logger.error(f"Failed to generate draft: {e}")
             state.errors.append(f"Draft generation error: {str(e)}")
-        
+            state.status = "failed"
+
         return state
     
     async def validate_email_draft(self, state: RecipientGraphState) -> RecipientGraphState:

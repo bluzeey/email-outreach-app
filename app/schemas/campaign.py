@@ -44,11 +44,15 @@ class CampaignListResponse(BaseModel):
 
 class CampaignUploadResponse(BaseModel):
     """CSV upload response."""
-    
+
     campaign_id: str
     filename: str
     row_count: int
     columns: list[str]
+    added_rows: int | None = None
+    skipped_duplicates: int | None = None
+    skipped_invalid: int | None = None
+    mode: str | None = None  # "initial" or "append"
 
 
 class CampaignAnalyzeRequest(BaseModel):

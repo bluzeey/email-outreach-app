@@ -147,58 +147,276 @@ async def upload_file(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
 ):
-    """Upload CSV or Excel file for a campaign."""
+    """Upload CSV or Excel file for a campaign.
+
+    Supports two modes:
+    1. Initial upload: Campaign has no rows yet (new campaign)
+    2. Append upload: Campaign already has rows + inferred schema - adds only new leads
+    """
     try:
         # Check campaign exists
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        
+
         # Validate file type
         if not DataLoader.is_supported_file(file.filename):
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Only CSV and Excel files (.csv, .xls, .xlsx, .xlsm) are allowed"
             )
-        
+
         # Get file extension
         file_ext = DataLoader.get_file_extension(file.filename)
-        
+
         # Save file
         file_id = str(uuid.uuid4())
         dest_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.{file_ext}")
-        
+
         await DataLoader.save_upload(file, dest_path)
-        
+
         # Load and profile data
         df = DataLoader.load_file(dest_path)
-        
-        # Update campaign
-        campaign.csv_filename = file.filename
-        campaign.csv_storage_path = dest_path
-        campaign.status = CampaignStatus.PROFILING
-        await session.commit()
-        
-        logger.info(f"Uploaded file for campaign {campaign_id}: {len(df)} rows")
-        
-        return CampaignUploadResponse(
-            campaign_id=campaign_id,
-            filename=file.filename,
-            row_count=len(df),
-            columns=list(df.columns),
+
+        # Check if this is an append operation (campaign has schema + existing rows)
+        existing_rows_result = await session.execute(
+            select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
         )
-        
+        existing_rows = existing_rows_result.scalars().all()
+
+        has_existing_schema = bool(campaign.inferred_schema_json and campaign.inferred_schema_json.get("primary_email_column"))
+
+        if existing_rows and has_existing_schema:
+            # APPEND MODE: Add only new leads
+            return await _append_leads_to_campaign(
+                campaign, df, dest_path, file.filename, session
+            )
+        else:
+            # INITIAL MODE: Standard upload for new campaign
+            campaign.csv_filename = file.filename
+            campaign.csv_storage_path = dest_path
+            campaign.status = CampaignStatus.PROFILING
+            await session.commit()
+
+            logger.info(f"Initial upload for campaign {campaign_id}: {len(df)} rows")
+
+            return CampaignUploadResponse(
+                campaign_id=campaign_id,
+                filename=file.filename,
+                row_count=len(df),
+                columns=list(df.columns),
+                mode="initial",
+            )
+
     except HTTPException:
         raise
     except ImportError as e:
         logger.error(f"Missing Excel dependencies: {e}")
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="Excel support not available. Please install openpyxl and xlrd."
         )
     except Exception as e:
         logger.error(f"Failed to upload file: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+async def _append_leads_to_campaign(
+    campaign: Campaign,
+    df: "pd.DataFrame",
+    dest_path: str,
+    filename: str,
+    session: AsyncSession,
+) -> CampaignUploadResponse:
+    """Append new leads to an existing campaign with inferred schema.
+
+    - Skip duplicate emails (already in campaign or duplicates in new file)
+    - Skip invalid/placeholder emails
+    - Create rows with QUEUED status so they can be processed
+    - If campaign was COMPLETED, move to PAUSED so user can Run again
+    """
+    import pandas as pd
+
+    campaign_id = campaign.id
+    schema = campaign.inferred_schema_json or {}
+    email_col = schema.get("primary_email_column", "")
+
+    if not email_col or email_col not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Email column '{email_col}' not found in uploaded file. Expected schema: {list(schema.keys())}"
+        )
+
+    # Get existing emails from campaign (case-insensitive, stripped)
+    existing_result = await session.execute(
+        select(CampaignRow.recipient_email).where(CampaignRow.campaign_id == campaign_id)
+    )
+    existing_emails = set()
+    for (email,) in existing_result.all():
+        if email:
+            existing_emails.add(email.lower().strip())
+
+    # Get max row number for continuing sequence
+    max_row_result = await session.execute(
+        select(CampaignRow.row_number)
+        .where(CampaignRow.campaign_id == campaign_id)
+        .order_by(CampaignRow.row_number.desc())
+        .limit(1)
+    )
+    max_row = max_row_result.scalar() or 0
+    next_row_number = max_row + 1
+
+    # Invalid/placeholder values to skip
+    invalid_placeholders = {"", "nan", "null", "none", "n/a", "na", "-", "--", "..."}
+
+    added_count = 0
+    skipped_duplicates = 0
+    skipped_invalid = 0
+    seen_in_file = set()  # Track duplicates within the same file
+
+    from app.db.models import CampaignRow, RowStatus
+    from app.services.draft_generation_service import DraftGenerationService
+
+    draft_service = DraftGenerationService()
+    schema_obj = None
+    plan_obj = None
+
+    # Parse schema and plan objects for draft generation
+    try:
+        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
+        schema_obj = CsvSchemaInference(**schema)
+        plan_obj = CampaignPlan(**(campaign.campaign_plan_json or {}))
+    except Exception as e:
+        logger.warning(f"Could not parse schema/plan for draft generation: {e}")
+
+    # Get sender info for drafts
+    sender_name = None
+    signature = None
+    if campaign.gmail_account_id:
+        from app.db.models import GmailAccount
+        gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
+        if gmail_account:
+            sender_name = gmail_account.sender_name
+            signature = gmail_account.signature
+
+    # Process each row
+    for idx, row_data in df.iterrows():
+        # Get email from row
+        email_raw = str(row_data.get(email_col, "")).strip()
+        email_lower = email_raw.lower()
+
+        # Check for invalid/placeholder emails
+        if not email_raw or email_lower in invalid_placeholders or pd.isna(row_data.get(email_col)):
+            skipped_invalid += 1
+            continue
+
+        # Check for duplicates in existing campaign
+        if email_lower in existing_emails:
+            skipped_duplicates += 1
+            continue
+
+        # Check for duplicates within the same file
+        if email_lower in seen_in_file:
+            skipped_duplicates += 1
+            continue
+
+        seen_in_file.add(email_lower)
+
+        # Prepare row data
+        row_dict = row_data.to_dict()
+
+        # Create CampaignRow with QUEUED status
+        try:
+            campaign_row = CampaignRow(
+                campaign_id=campaign_id,
+                row_number=next_row_number,
+                raw_row_json=row_dict,
+                recipient_email=email_raw,
+                status=RowStatus.QUEUED,
+            )
+            session.add(campaign_row)
+            await session.flush()  # Get the row ID
+
+            # Generate draft immediately for the new row
+            if schema_obj and plan_obj:
+                try:
+                    draft = await draft_service.generate_draft(
+                        schema_obj, plan_obj, row_dict, sender_name, signature
+                    )
+
+                    # Save draft to DB
+                    from app.db.models import EmailDraft
+                    email_draft = EmailDraft(
+                        campaign_row_id=campaign_row.id,
+                        subject=draft.subject,
+                        plain_text_body=draft.plain_text_body,
+                        html_body=draft.html_body,
+                        personalization_fields_used=draft.personalization_fields_used,
+                        key_claims_used=draft.key_claims_used,
+                        generation_confidence=int(draft.confidence * 100),
+                        needs_human_review=draft.needs_human_review,
+                        review_reasons=draft.review_reasons,
+                    )
+                    session.add(email_draft)
+
+                    # Update row status to GENERATED (ready to send)
+                    campaign_row.status = RowStatus.GENERATED
+
+                except Exception as draft_error:
+                    logger.error(f"Failed to generate draft for appended row {campaign_row.id}: {draft_error}")
+                    # Keep as QUEUED - will be generated during run
+
+            added_count += 1
+            next_row_number += 1
+
+            # Commit every 10 rows to avoid memory issues
+            if added_count % 10 == 0:
+                await session.commit()
+
+        except Exception as row_error:
+            logger.error(f"Failed to create row for email {email_raw}: {row_error}")
+            # Continue with next row
+            continue
+
+    # Final commit for remaining rows
+    await session.commit()
+
+    # Update campaign totals
+    total_rows_result = await session.execute(
+        select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
+    )
+    total_rows = len(total_rows_result.scalars().all())
+
+    campaign.totals_json = campaign.totals_json or {}
+    campaign.totals_json["total_rows"] = total_rows
+
+    # If campaign was COMPLETED, move to PAUSED so user can Run again
+    if campaign.status == CampaignStatus.COMPLETED:
+        campaign.status = CampaignStatus.PAUSED
+        logger.info(f"Campaign {campaign_id} moved from COMPLETED to PAUSED after adding {added_count} new leads")
+
+    # Update file reference (track the latest upload)
+    campaign.csv_filename = filename
+    campaign.csv_storage_path = dest_path
+
+    await session.commit()
+
+    logger.info(
+        f"Appended leads to campaign {campaign_id}: "
+        f"{added_count} added, {skipped_duplicates} duplicates skipped, "
+        f"{skipped_invalid} invalid skipped. Total rows now: {total_rows}"
+    )
+
+    return CampaignUploadResponse(
+        campaign_id=campaign_id,
+        filename=filename,
+        row_count=len(df),
+        columns=list(df.columns),
+        added_rows=added_count,
+        skipped_duplicates=skipped_duplicates,
+        skipped_invalid=skipped_invalid,
+        mode="append",
+    )
 
 
 # Keep old endpoint for backwards compatibility
@@ -532,6 +750,7 @@ async def approve_campaign(
         logger.info(f"Found {len(pending_rows)} rows with drafts ready to send")
         
         # Send each email (drafts are already generated)
+        # Commit after each row for real-time status updates in the UI
         processed = 0
         failed = 0
         for row in pending_rows:
@@ -540,13 +759,16 @@ async def approve_campaign(
                 processed += 1
                 if row.status == RowStatus.FAILED:
                     failed += 1
+                # Commit per row so UI can see real-time status
+                await session.commit()
             except Exception as e:
                 logger.error(f"Failed to send email to row {row.id}: {e}")
                 row.status = RowStatus.FAILED
                 row.error_message = str(e)
                 failed += 1
-        
-        await session.commit()
+                await session.commit()
+
+        # Final refresh of totals
         
         # Check if all rows are processed
         total_result = await session.execute(
@@ -651,19 +873,23 @@ async def run_campaign(
         logger.info(f"Found {len(pending_rows)} pending rows to process for campaign {campaign_id}")
         
         # Process each row
+        # Commit after each row for real-time status updates in the UI
         processed = 0
         failed = 0
         for row in pending_rows:
             try:
                 await _process_recipient_row(session, campaign, row)
                 processed += 1
+                # Commit per row so UI can see real-time status
+                await session.commit()
             except Exception as e:
                 logger.error(f"Failed to process row {row.id}: {e}")
                 row.status = RowStatus.FAILED
                 row.error_message = str(e)
                 failed += 1
-        
-        await session.commit()
+                await session.commit()
+
+        # Final refresh of campaign state
         
         # Check if all done
         total_result = await session.execute(

@@ -127,11 +127,18 @@
             text-align: center;
             background: var(--color-gray-50);
             transition: var(--transition);
+            cursor: pointer;
         }
-        
+
         .upload-area:hover {
             border-color: var(--color-primary);
             background: #eff6ff;
+        }
+
+        .upload-area.drag-over {
+            border-color: var(--color-primary);
+            background: #dbeafe;
+            border-style: solid;
         }
         
         .draft-card {
@@ -300,9 +307,9 @@
                     </div>
                     
                     ${campaign.errors?.length > 0 ? renderErrorsSection(campaign.errors) : ''}
-                    
-                    ${!campaign.csv_filename ? renderUploadSection() : ''}
-                    
+
+                    ${renderUploadSection(campaign.csv_filename)}
+
                     ${campaign.inferred_schema_json && Object.keys(campaign.inferred_schema_json).length > 0 ? renderSchemaSection(campaign.inferred_schema_json) : ''}
                     
                     ${campaign.campaign_plan_json && Object.keys(campaign.campaign_plan_json).length > 0 ? renderPlanSection(campaign.campaign_plan_json) : ''}
@@ -388,29 +395,159 @@
             return buttons.join('');
         }
         
-        function renderUploadSection() {
+        // Track upload state
+        let isUploading = false;
+
+        function renderUploadSection(existingFilename) {
+            const isAppend = !!existingFilename;
+            const title = isAppend ? '📤 Add More Leads' : '📤 Upload Leads File';
+            const description = isAppend
+                ? 'Drop a file here or click to add more leads. Duplicate emails will be automatically skipped.'
+                : 'Drag & drop your file here, or click to browse';
+
             return `
                 <div class="section-card">
-                    <h3>📤 Upload Leads File</h3>
-                    <div class="upload-area">
-                        <form id="upload-form" enctype="multipart/form-data" style="margin: 0;">
-                            <p style="color: var(--color-gray-500); margin-bottom: 1rem;">Drag & drop your file here, or click to browse</p>
-                            <input type="file" name="file" accept=".csv,.xls,.xlsx,.xlsm" required 
-                                   style="margin-bottom: 1rem;" onchange="updateFileName(this)">
-                            <p id="selected-file" style="font-size: 0.9rem; color: var(--color-gray-700); margin-bottom: 1rem; min-height: 1.5rem;"></p>
-                            <button type="submit" class="btn btn-primary">Upload File</button>
-                        </form>
+                    <h3>${title}</h3>
+                    <div class="upload-area" id="upload-dropzone" onclick="triggerFileSelect()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                        <input type="file" id="file-input" name="file" accept=".csv,.xls,.xlsx,.xlsm" style="display: none;" onchange="handleFileSelected(this)">
+                        <div id="upload-content">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
+                            <p style="color: var(--color-gray-500); margin-bottom: 0.5rem;">${description}</p>
+                            <p id="upload-status" style="font-size: 0.875rem; color: var(--color-primary); min-height: 1.25rem;"></p>
+                        </div>
                     </div>
                     <p style="margin-bottom: 0; margin-top: 1rem; font-size: 0.875rem; color: var(--color-gray-500);">
                         Supported formats: CSV, Excel (.xls, .xlsx)
+                        ${isAppend ? '<br><strong>Note:</strong> Emails already in this campaign will be skipped automatically.' : ''}
                     </p>
                 </div>
             `;
         }
-        
-        function updateFileName(input) {
-            const fileName = input.files[0]?.name || '';
-            document.getElementById('selected-file').textContent = fileName ? `Selected: ${fileName}` : '';
+
+        function triggerFileSelect() {
+            if (isUploading) return;
+            document.getElementById('file-input').click();
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isUploading) return;
+            document.getElementById('upload-dropzone').classList.add('drag-over');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('upload-dropzone').classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isUploading) return;
+            document.getElementById('upload-dropzone').classList.remove('drag-over');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                if (isValidFileType(file.name)) {
+                    uploadFile(file);
+                } else {
+                    showUploadStatus('❌ Invalid file type. Please use CSV or Excel.', 'error');
+                }
+            }
+        }
+
+        function handleFileSelected(input) {
+            const file = input.files[0];
+            if (file) {
+                if (isValidFileType(file.name)) {
+                    uploadFile(file);
+                } else {
+                    showUploadStatus('❌ Invalid file type. Please use CSV or Excel.', 'error');
+                    input.value = '';
+                }
+            }
+        }
+
+        function isValidFileType(filename) {
+            const ext = filename.toLowerCase();
+            return ext.endsWith('.csv') || ext.endsWith('.xls') || ext.endsWith('.xlsx') || ext.endsWith('.xlsm');
+        }
+
+        function showUploadStatus(message, type = 'info') {
+            const statusEl = document.getElementById('upload-status');
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.style.color = type === 'error' ? 'var(--color-danger)' : 'var(--color-primary)';
+            }
+        }
+
+        async function uploadFile(file) {
+            if (isUploading) return;
+
+            isUploading = true;
+            showUploadStatus('⏳ Uploading...');
+
+            // Disable the dropzone visually
+            const dropzone = document.getElementById('upload-dropzone');
+            if (dropzone) {
+                dropzone.style.opacity = '0.6';
+                dropzone.style.cursor = 'not-allowed';
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Build success message
+                    let message;
+                    if (data.mode === 'append') {
+                        message = `✅ ${data.added_rows} new leads added`;
+                        if (data.skipped_duplicates > 0) {
+                            message += `, ${data.skipped_duplicates} duplicates skipped`;
+                        }
+                        if (data.skipped_invalid > 0) {
+                            message += `, ${data.skipped_invalid} invalid skipped`;
+                        }
+                    } else {
+                        message = `✅ File uploaded! ${data.row_count} rows detected.`;
+                    }
+
+                    showUploadStatus(message, 'success');
+
+                    // Short delay then reload to show updated state
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    isUploading = false;
+                    showUploadStatus('❌ ' + (data.detail || 'Upload failed'), 'error');
+                    if (dropzone) {
+                        dropzone.style.opacity = '1';
+                        dropzone.style.cursor = 'pointer';
+                    }
+                    // Clear file input for retry
+                    document.getElementById('file-input').value = '';
+                }
+            } catch (error) {
+                isUploading = false;
+                showUploadStatus('❌ Error: ' + error.message, 'error');
+                if (dropzone) {
+                    dropzone.style.opacity = '1';
+                    dropzone.style.cursor = 'pointer';
+                }
+                document.getElementById('file-input').value = '';
+            }
         }
         
         function renderErrorsSection(errors) {
@@ -821,7 +958,39 @@
         
         // Action handlers
         let eventSource = null;
-        
+
+        // Polling for real-time status updates during sending
+        let sendPollInterval = null;
+
+        function startSendPolling() {
+            // Stop any existing polling
+            stopSendPolling();
+
+            // Poll every 2 seconds during active sending
+            sendPollInterval = setInterval(async () => {
+                try {
+                    // Refresh progress and rows
+                    await Promise.all([
+                        loadProgress(),
+                        loadRows(totalRows, currentPage)
+                    ]);
+                } catch (e) {
+                    // Silent fail - polling is best-effort
+                    console.log('Poll refresh failed:', e);
+                }
+            }, 2000);
+
+            console.log('Started real-time status polling');
+        }
+
+        function stopSendPolling() {
+            if (sendPollInterval) {
+                clearInterval(sendPollInterval);
+                sendPollInterval = null;
+                console.log('Stopped real-time status polling');
+            }
+        }
+
         function showAnalysisProgress() {
             const section = document.getElementById('progress-section');
             section.innerHTML = `
@@ -963,7 +1132,15 @@
         }
         
         async function startSending() {
-            await approveCampaign();
+            // Start polling for real-time updates before the API call
+            startSendPolling();
+
+            try {
+                await approveCampaign();
+            } finally {
+                // Stop polling after request completes
+                stopSendPolling();
+            }
         }
         
         async function rejectCampaign() {
@@ -982,10 +1159,13 @@
         }
         
         async function runCampaign() {
+            // Start polling for real-time updates
+            startSendPolling();
+
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/run`, { method: 'POST' });
                 const data = await response.json();
-                
+
                 if (data.success) {
                     alert(data.message);
                     location.reload();
@@ -994,6 +1174,9 @@
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+            } finally {
+                // Stop polling after request completes
+                stopSendPolling();
             }
         }
         
@@ -1297,41 +1480,16 @@
             }
         };
         
-        // Upload form handler
-        document.addEventListener('submit', async (e) => {
-            if (e.target.id === 'upload-form') {
-                e.preventDefault();
-                
-                const submitBtn = e.target.querySelector('button[type="submit"]');
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Uploading...';
-                
-                const formData = new FormData(e.target);
-                
-                try {
-                    const response = await fetch(`/api/campaigns/${campaignId}/upload`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        alert(`File uploaded! ${data.row_count} rows detected.`);
-                        location.reload();
-                    } else {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Upload File';
-                        alert('Upload failed: ' + (data.detail || 'Unknown error'));
-                    }
-                } catch (error) {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Upload File';
-                    alert('Error: ' + error.message);
-                }
+
+        
+        // Clean up polling when leaving the page
+        window.addEventListener('beforeunload', () => {
+            stopSendPolling();
+            if (eventSource) {
+                eventSource.close();
             }
         });
-        
+
         loadCampaign();
     </script>
 </body>

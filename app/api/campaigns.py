@@ -235,8 +235,6 @@ async def _append_leads_to_campaign(
     - Create rows with QUEUED status so they can be processed
     - If campaign was COMPLETED, move to PAUSED so user can Run again
     """
-    import pandas as pd
-
     campaign_id = campaign.id
     schema = campaign.inferred_schema_json or {}
     email_col = schema.get("primary_email_column", "")
@@ -274,7 +272,6 @@ async def _append_leads_to_campaign(
     skipped_invalid = 0
     seen_in_file = set()  # Track duplicates within the same file
 
-    from app.db.models import CampaignRow, RowStatus
     from app.services.draft_generation_service import DraftGenerationService
 
     draft_service = DraftGenerationService()

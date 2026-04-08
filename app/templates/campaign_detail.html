@@ -459,26 +459,171 @@
             `;
         }
         
+        // Track edit mode for campaign plan
+        let isEditingPlan = false;
+        
+        function canEditPlan(status) {
+            const editableStatuses = [
+                'awaiting_schema_review',
+                'awaiting_campaign_approval',
+                'ready_to_send',
+                'paused'
+            ];
+            return editableStatuses.includes(status);
+        }
+        
         function renderPlanSection(plan) {
+            if (isEditingPlan) {
+                return renderPlanEditForm(plan);
+            }
+            return renderPlanReadOnly(plan);
+        }
+        
+        function renderPlanReadOnly(plan) {
+            const campaign = window.currentCampaign;
+            const showEditButton = campaign && canEditPlan(campaign.status);
+            
             return `
                 <div class="section-card" style="background: #f0fdf4; border-color: #bbf7d0;">
-                    <h3 style="color: #166534;">🎯 Campaign Plan</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <h3 style="color: #166534;">🎯 Campaign Plan</h3>
+                        ${showEditButton ? `
+                            <button onclick="editPlan()" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                                ✏️ Edit Plan
+                            </button>
+                        ` : ''}
+                    </div>
                     <div class="schema-grid">
-                        <div class="schema-item">
+                        <div class="schema-item" style="grid-column: 1 / -1;">
                             <label>Goal</label>
-                            <value>${plan.inferred_goal}</value>
+                            <value>${plan.inferred_goal || 'Not set'}</value>
                         </div>
-                        <div class="schema-item">
+                        <div class="schema-item" style="grid-column: 1 / -1;">
                             <label>Tone</label>
-                            <value>${plan.tone}</value>
+                            <value>${plan.tone || 'Not set'}</value>
                         </div>
                         <div class="schema-item" style="grid-column: 1 / -1;">
                             <label>Call to Action</label>
-                            <value>${plan.cta}</value>
+                            <value>${plan.cta || 'Not set'}</value>
                         </div>
+                        ${plan.context ? `
+                            <div class="schema-item" style="grid-column: 1 / -1;">
+                                <label>Campaign Context</label>
+                                <value style="white-space: pre-wrap;">${plan.context}</value>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
+        }
+        
+        function renderPlanEditForm(plan) {
+            return `
+                <div class="section-card" style="background: #f0fdf4; border-color: #bbf7d0;">
+                    <h3 style="color: #166534;">🎯 Campaign Plan (Editing)</h3>
+                    <div class="schema-grid">
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Goal</label>
+                            <textarea id="edit-goal" rows="2" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.inferred_goal || ''}</textarea>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Tone</label>
+                            <textarea id="edit-tone" rows="2" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.tone || ''}</textarea>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Call to Action</label>
+                            <textarea id="edit-cta" rows="2" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.cta || ''}</textarea>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Campaign Context (Product/Service Description)</label>
+                            <textarea id="edit-context" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.context || ''}</textarea>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                        <button onclick="savePlan()" class="btn btn-primary">
+                            💾 Save & Regenerate Drafts
+                        </button>
+                        <button onclick="cancelEdit()" class="btn btn-secondary">
+                            Cancel
+                        </button>
+                    </div>
+                    <div id="edit-status" style="margin-top: 0.75rem; min-height: 1.5rem;"></div>
+                </div>
+            `;
+        }
+        
+        function editPlan() {
+            isEditingPlan = true;
+            loadCampaign();
+        }
+        
+        function cancelEdit() {
+            isEditingPlan = false;
+            loadCampaign();
+        }
+        
+        async function savePlan() {
+            const confirmed = confirm(
+                "This will update your campaign plan and regenerate all sample email drafts.\n\n" +
+                "Are you sure you want to continue?"
+            );
+            
+            if (!confirmed) return;
+            
+            const statusDiv = document.getElementById('edit-status');
+            statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Saving plan and regenerating drafts...</span>';
+            
+            try {
+                // Get values from form
+                const planData = {
+                    inferred_goal: document.getElementById('edit-goal').value,
+                    tone: document.getElementById('edit-tone').value,
+                    cta: document.getElementById('edit-cta').value,
+                    context: document.getElementById('edit-context').value
+                };
+                
+                // 1. Save the plan
+                const saveResponse = await fetch(`/api/campaigns/${campaignId}/plan`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(planData)
+                });
+                
+                if (!saveResponse.ok) {
+                    const error = await saveResponse.json();
+                    throw new Error(error.detail || 'Failed to save plan');
+                }
+                
+                // 2. Regenerate drafts
+                statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Regenerating email drafts...</span>';
+                
+                const regenResponse = await fetch(`/api/campaigns/${campaignId}/regenerate-drafts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!regenResponse.ok) {
+                    const error = await regenResponse.json();
+                    throw new Error(error.detail || 'Failed to regenerate drafts');
+                }
+                
+                const result = await regenResponse.json();
+                
+                // 3. Exit edit mode and refresh
+                isEditingPlan = false;
+                await loadCampaign();
+                
+                statusDiv.innerHTML = '<span style="color: var(--color-success);">✅ Plan saved and drafts regenerated successfully!</span>';
+                
+                // Clear success message after 3 seconds
+                setTimeout(() => {
+                    const status = document.getElementById('edit-status');
+                    if (status) status.innerHTML = '';
+                }, 3000);
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--color-danger);">❌ Error: ${error.message}</span>`;
+            }
         }
         
         function renderSampleDraftsSection(drafts) {

@@ -102,3 +102,20 @@ class CampaignExportResponse(BaseModel):
     download_url: str
     format: str
     row_count: int
+
+
+class CampaignPlanUpdateRequest(BaseModel):
+    """Update campaign plan request."""
+    
+    inferred_goal: str | None = None
+    tone: str | None = None
+    cta: str | None = None
+    context: str | None = None
+
+
+class CampaignRegenerateDraftsResponse(BaseModel):
+    """Regenerate drafts response."""
+    
+    success: bool
+    drafts: list[dict]
+    message: str

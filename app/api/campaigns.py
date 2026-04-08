@@ -33,7 +33,9 @@ from app.schemas.campaign import (
     CampaignCreateRequest,
     CampaignExportResponse,
     CampaignListResponse,
+    CampaignPlanUpdateRequest,
     CampaignProgressResponse,
+    CampaignRegenerateDraftsResponse,
     CampaignResponse,
     CampaignUploadResponse,
 )
@@ -1358,3 +1360,154 @@ async def get_campaign_progress(
     except Exception as e:
         logger.error(f"Failed to get progress: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
+
+
+@router.put("/{campaign_id}/plan")
+async def update_campaign_plan(
+    campaign_id: str,
+    request: CampaignPlanUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update campaign plan fields (goal, tone, cta, context)."""
+    try:
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Check if campaign can be edited
+        editable_statuses = [
+            CampaignStatus.AWAITING_SCHEMA_REVIEW,
+            CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
+            CampaignStatus.READY_TO_SEND,
+            CampaignStatus.PAUSED,
+        ]
+        
+        if campaign.status not in editable_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot edit plan when campaign status is '{campaign.status.value}'. Editing is only allowed before sending starts."
+            )
+        
+        # Get current plan
+        current_plan = campaign.campaign_plan_json or {}
+        
+        # Update fields if provided
+        if request.inferred_goal is not None:
+            current_plan["inferred_goal"] = request.inferred_goal
+        if request.tone is not None:
+            current_plan["tone"] = request.tone
+        if request.cta is not None:
+            current_plan["cta"] = request.cta
+        if request.context is not None:
+            current_plan["context"] = request.context
+        
+        # Save updated plan
+        campaign.campaign_plan_json = current_plan
+        await session.commit()
+        
+        logger.info(f"Updated campaign plan for {campaign_id}")
+        
+        return CampaignActionResponse(
+            success=True,
+            message="Campaign plan updated successfully",
+            campaign_id=campaign_id,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update campaign plan: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update plan: {str(e)}")
+
+
+@router.post("/{campaign_id}/regenerate-drafts")
+async def regenerate_campaign_drafts(
+    campaign_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Regenerate sample drafts using the updated campaign plan."""
+    try:
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # Check if campaign can be edited
+        editable_statuses = [
+            CampaignStatus.AWAITING_SCHEMA_REVIEW,
+            CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
+            CampaignStatus.READY_TO_SEND,
+            CampaignStatus.PAUSED,
+        ]
+        
+        if campaign.status not in editable_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot regenerate drafts when campaign status is '{campaign.status.value}'."
+            )
+        
+        # Check required data exists
+        if not campaign.inferred_schema_json:
+            raise HTTPException(status_code=400, detail="No schema inferred for this campaign")
+        
+        if not campaign.csv_path or not os.path.exists(campaign.csv_path):
+            raise HTTPException(status_code=400, detail="CSV file not found")
+        
+        # Import required services
+        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
+        from app.services.draft_generation_service import DraftGenerationService
+        from app.services.csv_profiler import CSVProfiler
+        from app.services.csv_loader import DataLoader
+        
+        # Load schema and plan
+        schema = CsvSchemaInference(**campaign.inferred_schema_json)
+        plan = CampaignPlan(**campaign.campaign_plan_json)
+        
+        # Get sender name and signature from Gmail account if available
+        sender_name = None
+        signature = None
+        try:
+            if campaign.gmail_account_id:
+                gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
+                if gmail_account:
+                    sender_name = gmail_account.sender_name
+                    signature = gmail_account.signature
+            
+            # If no campaign association, get the active Gmail account
+            if not sender_name:
+                result = await session.execute(
+                    select(GmailAccount).where(GmailAccount.status == "active")
+                )
+                gmail_account = result.scalar_one_or_none()
+                if gmail_account:
+                    sender_name = gmail_account.sender_name
+                    signature = gmail_account.signature
+        except Exception as e:
+            logger.warning(f"Could not fetch sender name/signature: {e}")
+        
+        # Load sample rows
+        df = DataLoader.load_file(campaign.csv_path)
+        sample_rows = CSVProfiler.get_sample_rows(df, 3)
+        
+        # Generate new drafts
+        draft_service = DraftGenerationService()
+        drafts = await draft_service.generate_sample_drafts(
+            schema, plan, sample_rows, 3, sender_name, signature
+        )
+        
+        # Update campaign with new drafts
+        campaign.sample_drafts_json = [d.model_dump() for d in drafts]
+        await session.commit()
+        
+        logger.info(f"Regenerated {len(drafts)} sample drafts for campaign {campaign_id}")
+        
+        return CampaignRegenerateDraftsResponse(
+            success=True,
+            drafts=campaign.sample_drafts_json,
+            message=f"Successfully regenerated {len(drafts)} sample drafts",
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to regenerate drafts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate drafts: {str(e)}")

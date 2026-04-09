@@ -59,6 +59,72 @@ class ApprovalDecision(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class LeadStatus(str, enum.Enum):
+    """Lead lifecycle status."""
+    ACTIVE = "active"  # Can receive followups
+    RESPONDED = "responded"  # Has responded, no followups
+    DO_NOT_CONTACT = "do_not_contact"  # Explicitly opted out/unsubscribed
+    BOUNCED = "bounced"  # Email bounced
+
+
+class LeadTag(Base):
+    """Tag for categorizing leads (e.g., 'researchers', 'startups', 'vip')."""
+    
+    __tablename__ = "lead_tags"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    color = Column(String, nullable=True)  # Hex color for UI
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    leads = relationship("Lead", secondary="lead_tag_associations", back_populates="tags")
+
+
+class LeadTagAssociation(Base):
+    """Many-to-many association between leads and tags."""
+    
+    __tablename__ = "lead_tag_associations"
+    
+    lead_id = Column(String, ForeignKey("leads.id"), primary_key=True)
+    tag_id = Column(String, ForeignKey("lead_tags.id"), primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Lead(Base):
+    """Global lead (contact) model - unique by email across all campaigns."""
+    
+    __tablename__ = "leads"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, nullable=False, unique=True, index=True)
+    
+    # Profile info (merged from campaign data)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    company = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    profile_data_json = Column(JSON, default=dict)  # Additional merged fields
+    
+    # Lifecycle status
+    status = Column(Enum(LeadStatus), default=LeadStatus.ACTIVE)
+    
+    # Followup tracking (one followup max)
+    has_received_followup = Column(Boolean, default=False)
+    followup_sent_at = Column(DateTime, nullable=True)
+    
+    # Metadata
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign_rows = relationship("CampaignRow", back_populates="lead")
+    tags = relationship("LeadTag", secondary="lead_tag_associations", back_populates="leads")
+
+
 class GmailAccount(Base):
     """Gmail account model."""
     
@@ -118,19 +184,20 @@ class Campaign(Base):
 
 
 class CampaignRow(Base):
-    """Campaign row (recipient) model."""
+    """Campaign row (recipient) model - links to global Lead."""
     
     __tablename__ = "campaign_rows"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     campaign_id = Column(String, ForeignKey("campaigns.id"), nullable=False)
+    lead_id = Column(String, ForeignKey("leads.id"), nullable=True)  # Link to global lead
     row_number = Column(Integer, nullable=False)
     
     # Raw data
     raw_row_json = Column(JSON, default=dict)
     normalized_row_json = Column(JSON, default=dict)
     
-    # Recipient info
+    # Recipient info (also stored on Lead, kept here for convenience)
     recipient_email = Column(String, nullable=True)
     
     # Status
@@ -152,8 +219,10 @@ class CampaignRow(Base):
     
     # Relationships
     campaign = relationship("Campaign", back_populates="rows")
+    lead = relationship("Lead", back_populates="campaign_rows")
     email_draft = relationship("EmailDraft", back_populates="campaign_row", uselist=False)
     send_event = relationship("SendEvent", back_populates="campaign_row", uselist=False)
+    followup_drafts = relationship("FollowupDraft", back_populates="campaign_row")
 
 
 class EmailDraft(Base):
@@ -200,8 +269,13 @@ class SendEvent(Base):
     
     # Provider info
     provider = Column(String, default="gmail")
-    provider_message_id = Column(String, nullable=True)
+    provider_message_id = Column(String, nullable=True)  # Gmail message ID
+    provider_thread_id = Column(String, nullable=True)   # Gmail thread ID for followups
     provider_response_json = Column(JSON, default=dict)
+    
+    # Email type
+    is_followup = Column(Boolean, default=False)  # Whether this is a followup email
+    original_send_event_id = Column(String, ForeignKey("send_events.id"), nullable=True)  # For followups, link to original
     
     # Status
     status = Column(Enum(SendStatus), default=SendStatus.PENDING)
@@ -214,6 +288,41 @@ class SendEvent(Base):
     
     # Relationships
     campaign_row = relationship("CampaignRow", back_populates="send_event")
+    original_send_event = relationship("SendEvent", remote_side=[id], backref="followup_events")
+
+
+class FollowupDraft(Base):
+    """Followup email draft for a campaign row."""
+    
+    __tablename__ = "followup_drafts"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_row_id = Column(String, ForeignKey("campaign_rows.id"), nullable=False)
+    
+    # Content
+    subject = Column(String, nullable=False)
+    plain_text_body = Column(Text, nullable=False)
+    html_body = Column(Text, nullable=False)
+    
+    # Context for generation
+    original_send_event_id = Column(String, ForeignKey("send_events.id"), nullable=True)
+    context_summary = Column(Text, nullable=True)  # AI summary of original email context
+    
+    # Generation metadata
+    generation_confidence = Column(Integer, default=0)  # 0-100
+    needs_human_review = Column(Boolean, default=False)
+    review_reasons = Column(JSON, default=list)
+    
+    # Status
+    status = Column(String, default="draft")  # draft, approved, rejected, sent
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    campaign_row = relationship("CampaignRow", back_populates="followup_drafts")
+    original_send_event = relationship("SendEvent", foreign_keys=[original_send_event_id])
 
 
 class ApprovalEvent(Base):

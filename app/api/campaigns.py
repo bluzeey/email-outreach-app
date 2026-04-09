@@ -311,10 +311,28 @@ async def _append_leads_to_campaign(
 
     # Second pass: bulk insert with transaction handling
     # Use a single transaction for all inserts to minimize SQLite locking
+    # Also upsert global leads
+    from app.services.lead_service import LeadService
+    lead_service = LeadService(session)
+    
     try:
         for row_data in rows_to_add:
+            # Upsert global lead
+            try:
+                lead = await lead_service.upsert_lead_from_row(
+                    email=row_data['recipient_email'],
+                    row_data=row_data['raw_row_json'],
+                    schema=schema,
+                    campaign_id=campaign_id,
+                )
+                lead_id = lead.id
+            except Exception as lead_error:
+                logger.warning(f"Failed to upsert lead for {row_data['recipient_email']}: {lead_error}")
+                lead_id = None
+            
             campaign_row = CampaignRow(
                 campaign_id=campaign_id,
+                lead_id=lead_id,  # Link to global lead
                 row_number=row_data['row_number'],
                 raw_row_json=row_data['raw_row_json'],
                 recipient_email=row_data['recipient_email'],

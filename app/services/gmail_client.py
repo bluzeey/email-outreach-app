@@ -15,9 +15,11 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Gmail API scopes - minimal scopes for sending and getting user email
+# Gmail API scopes - includes gmail.modify for thread management
+# Note: Users will need to reconnect their Gmail account to get the new scope
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",  # For thread management and reply tracking
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
 ]
@@ -139,12 +141,30 @@ def create_mime_message(
     subject: str,
     plain_text: str,
     html_body: str,
+    in_reply_to: str | None = None,
+    references: str | None = None,
 ) -> MIMEMultipart:
-    """Create MIME message for email."""
+    """Create MIME message for email.
+    
+    Args:
+        sender: From email address
+        to: To email address  
+        subject: Email subject
+        plain_text: Plain text body
+        html_body: HTML body
+        in_reply_to: Message ID for In-Reply-To header (for threading)
+        references: Message IDs for References header (for threading)
+    """
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = to
+    
+    # Add threading headers for followups
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+    if references:
+        msg["References"] = references
 
     # Add plain text part
     part1 = MIMEText(plain_text, "plain")
@@ -185,16 +205,39 @@ class GmailClient:
         subject: str,
         plain_text: str,
         html_body: str,
+        thread_id: str | None = None,
+        in_reply_to: str | None = None,
+        references: str | None = None,
     ) -> dict:
-        """Send email via Gmail API."""
+        """Send email via Gmail API.
+        
+        Args:
+            sender: From email address
+            to: To email address
+            subject: Email subject
+            plain_text: Plain text body
+            html_body: HTML body
+            thread_id: Gmail thread ID for threading (for followups)
+            in_reply_to: Message ID for In-Reply-To header
+            references: Message IDs for References header
+        """
         try:
             service = self._get_service()
 
             # Create MIME message
-            msg = create_mime_message(sender, to, subject, plain_text, html_body)
+            msg = create_mime_message(
+                sender, to, subject, plain_text, html_body,
+                in_reply_to=in_reply_to,
+                references=references,
+            )
 
-            # Encode and send
+            # Encode
             encoded_msg = encode_message(msg)
+            
+            # Add threadId if provided (for followups in same thread)
+            if thread_id:
+                encoded_msg["threadId"] = thread_id
+            
             result = (
                 service.users()
                 .messages()

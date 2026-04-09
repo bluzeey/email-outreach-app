@@ -12,7 +12,18 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.db.base import Base
-from app.db.models import GmailAccount, Campaign, CampaignRow, EmailDraft, SendEvent, ApprovalEvent
+from app.db.models import (
+    ApprovalEvent,
+    Campaign,
+    CampaignRow,
+    EmailDraft,
+    FollowupDraft,
+    GmailAccount,
+    Lead,
+    LeadTag,
+    LeadTagAssociation,
+    SendEvent,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

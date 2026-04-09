@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
-from app.api import auth, campaigns, pages, reviews
+from app.api import auth, campaigns, followups, leads, pages, reviews
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.base import AsyncSessionLocal, init_db
@@ -133,6 +133,8 @@ app.include_router(pages.router, tags=["pages"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(campaigns.router, prefix="/api/campaigns", tags=["campaigns"])
 app.include_router(reviews.router, prefix="/api/campaigns", tags=["reviews"])
+app.include_router(leads.router, prefix="/api/leads", tags=["leads"])
+app.include_router(followups.router, prefix="/api/followups", tags=["followups"])
 
 
 if __name__ == "__main__":

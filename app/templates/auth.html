@@ -246,6 +246,7 @@
             <nav>
                 <a href="/">Home</a>
                 <a href="/campaigns">Campaigns</a>
+                <a href="/leads">Leads</a>
                 <a href="/auth" class="active">Connect Gmail</a>
             </nav>
         </header>
@@ -284,6 +285,10 @@
                             <span class="check-icon">✓</span>
                             <span>Send emails on your behalf</span>
                         </li>
+                        <li class="allowed">
+                            <span class="check-icon">✓</span>
+                            <span>Manage email threads (for followups)</span>
+                        </li>
                         <li class="denied">
                             <span class="cross-icon">✗</span>
                             <span>Read your inbox</span>
@@ -292,11 +297,10 @@
                             <span class="cross-icon">✗</span>
                             <span>Access your contacts</span>
                         </li>
-                        <li class="denied">
-                            <span class="cross-icon">✗</span>
-                            <span>Modify or delete emails</span>
-                        </li>
                     </ul>
+                    <p style="font-size: 0.8rem; color: var(--color-gray-500); margin-top: 0.75rem;">
+                        Note: If you connected before followup features were added, please reconnect to enable thread management.
+                    </p>
                 </div>
             </div>
         </main>

@@ -317,7 +317,11 @@ class CampaignGraphNodes:
             # Get schema and plan
             from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
             from app.services.draft_generation_service import DraftGenerationService
+            from app.services.lead_service import LeadService
             from app.db.models import EmailDraft
+            
+            # Initialize lead service for global lead management
+            lead_service = LeadService(self.session)
             
             schema = CsvSchemaInference(**state.inferred_schema)
             logger.info(f"Schema loaded - primary_email_column: {schema.primary_email_column}")
@@ -409,6 +413,19 @@ class CampaignGraphNodes:
                     skipped_count += 1
                     continue
                 
+                # Upsert global lead record
+                try:
+                    lead = await lead_service.upsert_lead_from_row(
+                        email=recipient_email,
+                        row_data=row_data,
+                        schema=state.inferred_schema,
+                        campaign_id=state.campaign_id,
+                    )
+                    lead_id = lead.id
+                except Exception as lead_error:
+                    logger.warning(f"Failed to upsert lead for {recipient_email}: {lead_error}")
+                    lead_id = None  # Continue without lead link if fails
+                
                 # Emit progress every 10 rows
                 if created_count > 0 and created_count % 10 == 0:
                     await progress_manager.update(
@@ -426,6 +443,7 @@ class CampaignGraphNodes:
                 try:
                     campaign_row = CampaignRow(
                         campaign_id=state.campaign_id,
+                        lead_id=lead_id,  # Link to global lead
                         row_number=idx + 1,
                         raw_row_json=row_data,
                         recipient_email=recipient_email,

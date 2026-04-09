@@ -30,3 +30,9 @@ async def new_campaign_page(request: Request):
 async def campaign_detail_page(request: Request, campaign_id: str):
     """Campaign detail page."""
     return templates.TemplateResponse(request, "campaign_detail.html", {"campaign_id": campaign_id})
+
+
+@router.get("/leads", response_class=HTMLResponse)
+async def leads_page(request: Request):
+    """Leads management page."""
+    return templates.TemplateResponse(request, "leads.html", {})

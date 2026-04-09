@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leads - Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .leads-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-card {
+            background: white;
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius);
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-primary);
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+            margin-top: 0.25rem;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-bar select, .filter-bar input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+        }
+        
+        .filter-bar input {
+            min-width: 200px;
+        }
+        
+        .tag-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-right: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .status-active { background: #d1fae5; color: #065f46; }
+        .status-responded { background: #dbeafe; color: #1e40af; }
+        .status-do_not_contact { background: #fee2e2; color: #991b1b; }
+        .status-bounced { background: #f3f4f6; color: #6b7280; }
+        
+        .lead-row {
+            transition: background 0.15s ease;
+        }
+        
+        .lead-row:hover {
+            background: #f9fafb;
+        }
+        
+        .lead-row.selected {
+            background: #eff6ff;
+        }
+        
+        .action-bar {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            background: #f9fafb;
+            border-bottom: 1px solid var(--color-gray-200);
+            align-items: center;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal.show {
+            display: block;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 2% auto;
+            max-width: 700px;
+            border-radius: var(--radius-lg);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--color-gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            padding: 1.5rem;
+        }
+        
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--color-gray-200);
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        
+        .followup-preview {
+            background: #f9fafb;
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--radius);
+            padding: 1rem;
+        }
+        
+        .followup-meta {
+            font-size: 0.875rem;
+            color: var(--color-gray-500);
+            margin-bottom: 0.75rem;
+        }
+        
+        .checkbox-col {
+            width: 40px;
+            text-align: center;
+        }
+        
+        .select-all-checkbox {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Outreach App</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/campaigns">Campaigns</a>
+                <a href="/leads" class="active">Leads</a>
+                <a href="/auth">Connect Gmail</a>
+            </nav>
+        </header>
+        
+        <main>
+            <div class="leads-header">
+                <div>
+                    <h2>Leads</h2>
+                    <p style="color: var(--color-gray-500); margin: 0;">Manage your contacts and followups</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button onclick="showFollowupStats()" class="btn btn-secondary">
+                        📊 Followup Stats
+                    </button>
+                    <button onclick="showBulkActions()" class="btn btn-primary" id="bulk-action-btn" style="display: none;">
+                        Bulk Actions
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Stats -->
+            <div class="stats-grid" id="stats-section">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total">-</div>
+                    <div class="stat-label">Total Leads</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-eligible">-</div>
+                    <div class="stat-label">Eligible for Followup</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-responded">-</div>
+                    <div class="stat-label">Responded</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-followed">-</div>
+                    <div class="stat-label">Already Followed Up</div>
+                </div>
+            </div>
+            
+            <!-- Filters -->
+            <div class="filter-bar">
+                <select id="filter-status" onchange="applyFilters()">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="responded">Responded</option>
+                    <option value="do_not_contact">Do Not Contact</option>
+                    <option value="bounced">Bounced</option>
+                </select>
+                
+                <select id="filter-tag" onchange="applyFilters()">
+                    <option value="">All Tags</option>
+                </select>
+                
+                <select id="filter-eligible" onchange="applyFilters()">
+                    <option value="">All Leads</option>
+                    <option value="true">Eligible for Followup</option>
+                </select>
+                
+                <input type="text" id="search-input" placeholder="Search email, name, company..." onkeyup="handleSearch()">
+                
+                <button onclick="clearFilters()" class="btn btn-secondary btn-small">Clear</button>
+            </div>
+            
+            <!-- Action Bar -->
+            <div class="action-bar" id="action-bar" style="display: none;">
+                <span id="selected-count">0 selected</span>
+                <button onclick="bulkMarkResponded()" class="btn btn-small btn-success">Mark Responded</button>
+                <button onclick="bulkMarkActive()" class="btn btn-small">Mark Active</button>
+                <button onclick="showTagModal()" class="btn btn-small btn-primary">Add Tag</button>
+                <button onclick="clearSelection()" class="btn btn-small btn-secondary">Clear</button>
+            </div>
+            
+            <!-- Leads Table -->
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table class="data-table" id="leads-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-col">
+                                <input type="checkbox" class="select-all-checkbox" onchange="toggleSelectAll()">
+                            </th>
+                            <th>Email</th>
+                            <th>Name</th>
+                            <th>Company</th>
+                            <th>Status</th>
+                            <th>Tags</th>
+                            <th>Followup</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leads-tbody">
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 3rem;">
+                                <div style="color: var(--color-gray-400);">
+                                    <div style="width: 24px; height: 24px; border: 3px solid var(--color-gray-200); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                                    <p>Loading leads...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <!-- Pagination -->
+                <div class="pagination" id="pagination" style="padding: 1rem; border-top: 1px solid var(--color-gray-200);">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>Email Outreach App — Built with FastAPI + LangGraph</p>
+        </footer>
+    </div>
+    
+    <!-- Followup Modal -->
+    <div id="followup-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📧 Followup Preview</h3>
+                <button onclick="closeModal('followup-modal')" class="btn btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="followup-content">
+                    <p>Loading...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal('followup-modal')" class="btn btn-secondary">Cancel</button>
+                <button onclick="editFollowup()" class="btn btn-secondary">Edit</button>
+                <button onclick="sendFollowup()" class="btn btn-primary">Send Followup</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bulk Actions Modal -->
+    <div id="bulk-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚡ Bulk Actions</h3>
+                <button onclick="closeModal('bulk-modal')" class="btn btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Generate Followups for Eligible Leads</label>
+                    <p style="color: var(--color-gray-500); font-size: 0.875rem; margin-bottom: 0.75rem;">
+                        This will generate followup drafts for all eligible leads. You can review and edit before sending.
+                    </p>
+                    <select id="bulk-tone" style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <option value="gentle">Gentle - "I wanted to follow up..."</option>
+                        <option value="polite">Polite - "Just following up..."</option>
+                        <option value="direct">Direct - "Following up on..."</option>
+                    </select>
+                    <button onclick="generateBulkFollowups()" class="btn btn-primary" style="width: 100%;">
+                        Generate Followup Drafts
+                    </button>
+                </div>
+                
+                <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid var(--color-gray-200);">
+                
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Selected Leads Actions</label>
+                    <p id="bulk-selected-count" style="color: var(--color-gray-500); font-size: 0.875rem; margin-bottom: 0.75rem;">
+                        0 leads selected
+                    </p>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button onclick="bulkMarkResponded()" class="btn btn-success" style="flex: 1;">Mark Responded</button>
+                        <button onclick="bulkMarkActive()" class="btn btn-secondary" style="flex: 1;">Mark Active</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tag Modal -->
+    <div id="tag-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🏷️ Manage Tags</h3>
+                <button onclick="closeModal('tag-modal')" class="btn btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="tag-list" style="margin-bottom: 1rem;">
+                    <!-- Tags loaded here -->
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="new-tag-name" placeholder="New tag name..." style="flex: 1; padding: 0.5rem;">
+                    <button onclick="createTag()" class="btn btn-primary">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Followup Modal -->
+    <div id="edit-followup-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✏️ Edit Followup</h3>
+                <button onclick="closeModal('edit-followup-modal')" class="btn btn-icon">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Subject</label>
+                    <input type="text" id="edit-followup-subject" style="width: 100%; padding: 0.5rem;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Body</label>
+                    <textarea id="edit-followup-body" rows="10" style="width: 100%; padding: 0.5rem;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal('edit-followup-modal')" class="btn btn-secondary">Cancel</button>
+                <button onclick="saveFollowupEdit()" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentPage = 1;
+        let pageSize = 50;
+        let totalLeads = 0;
+        let leads = [];
+        let selectedLeads = new Set();
+        let currentDraft = null;
+        let tags = [];
+        
+        async function loadLeads() {
+            const status = document.getElementById('filter-status').value;
+            const tagId = document.getElementById('filter-tag').value;
+            const eligible = document.getElementById('filter-eligible').value;
+            const search = document.getElementById('search-input').value;
+            
+            let url = `/api/leads?page=${currentPage}&page_size=${pageSize}`;
+            if (status) url += `&status=${status}`;
+            if (tagId) url += `&tag_id=${tagId}`;
+            if (eligible) url += `&eligible_for_followup=${eligible}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                leads = data.leads;
+                totalLeads = data.total;
+                
+                renderLeads(leads);
+                renderPagination();
+                updateActionBar();
+            } catch (error) {
+                document.getElementById('leads-tbody').innerHTML = `
+                    <tr><td colspan="8" class="alert alert-error">
+                        Failed to load leads: ${error.message}
+                    </td></tr>
+                `;
+            }
+        }
+        
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/followups/stats');
+                const stats = await response.json();
+                
+                document.getElementById('stat-total').textContent = stats.total_leads;
+                document.getElementById('stat-eligible').textContent = stats.eligible_for_followup;
+                document.getElementById('stat-responded').textContent = stats.responded;
+                document.getElementById('stat-followed').textContent = stats.already_followed_up;
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+        
+        async function loadTags() {
+            try {
+                const response = await fetch('/api/leads/tags');
+                tags = await response.json();
+                
+                // Populate tag filter
+                const tagSelect = document.getElementById('filter-tag');
+                tagSelect.innerHTML = '<option value="">All Tags</option>';
+                tags.forEach(tag => {
+                    tagSelect.innerHTML += `<option value="${tag.id}">${tag.name}</option>`;
+                });
+            } catch (error) {
+                console.error('Failed to load tags:', error);
+            }
+        }
+        
+        function renderLeads(leads) {
+            const tbody = document.getElementById('leads-tbody');
+            
+            if (leads.length === 0) {
+                tbody.innerHTML = `
+                    <tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--color-gray-500);">
+                        No leads found
+                    </td></tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = leads.map(lead => {
+                const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '-';
+                const tagsHtml = (lead.tags || []).map(tag => 
+                    `<span class="tag-badge" style="background: ${tag.color || '#e5e7eb'}; color: #374151;">${tag.name}</span>`
+                ).join('');
+                
+                const followupStatus = lead.has_received_followup 
+                    ? '<span style="color: var(--color-gray-500);">Sent</span>'
+                    : lead.status === 'active'
+                        ? '<span style="color: var(--color-success);">Eligible</span>'
+                        : '<span style="color: var(--color-gray-400);">-</span>';
+                
+                const canFollowup = lead.status === 'active' && !lead.has_received_followup && lead.campaign_row_id;
+                
+                return `
+                    <tr class="lead-row ${selectedLeads.has(lead.id) ? 'selected' : ''}" data-lead-id="${lead.id}">
+                        <td class="checkbox-col">
+                            <input type="checkbox" ${selectedLeads.has(lead.id) ? 'checked' : ''} 
+                                onchange="toggleLead('${lead.id}')">
+                        </td>
+                        <td style="font-weight: 500;">${lead.email}</td>
+                        <td>${name}</td>
+                        <td>${lead.company || '-'}</td>
+                        <td><span class="status-badge status-${lead.status}">${lead.status.replace('_', ' ')}</span></td>
+                        <td>${tagsHtml}</td>
+                        <td>${followupStatus}</td>
+                        <td style="text-align: right;">
+                            ${canFollowup ? `
+                                <button onclick="previewFollowup('${lead.campaign_row_id}')" class="btn btn-small btn-primary">Followup</button>
+                            ` : ''}
+                            <button onclick="showLeadDetails('${lead.id}')" class="btn btn-small btn-secondary">View</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        function renderPagination() {
+            const totalPages = Math.ceil(totalLeads / pageSize);
+            const pagination = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--color-gray-500); font-size: 0.875rem;">
+                        Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalLeads)} of ${totalLeads}
+                    </span>
+                    <div style="display: flex; gap: 0.25rem;">
+            `;
+            
+            if (currentPage > 1) {
+                html += `<button onclick="changePage(${currentPage - 1})" class="btn btn-small">&larr; Prev</button>`;
+            }
+            
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    if (i === currentPage) {
+                        html += `<button class="btn btn-small" style="background: var(--color-primary); color: white;" disabled>${i}</button>`;
+                    } else {
+                        html += `<button onclick="changePage(${i})" class="btn btn-small">${i}</button>`;
+                    }
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    html += `<span style="color: var(--color-gray-400);">...</span>`;
+                }
+            }
+            
+            if (currentPage < totalPages) {
+                html += `<button onclick="changePage(${currentPage + 1})" class="btn btn-small">Next &rarr;</button>`;
+            }
+            
+            html += '</div></div>';
+            pagination.innerHTML = html;
+        }
+        
+        function changePage(page) {
+            currentPage = page;
+            loadLeads();
+        }
+        
+        function applyFilters() {
+            currentPage = 1;
+            loadLeads();
+        }
+        
+        function clearFilters() {
+            document.getElementById('filter-status').value = '';
+            document.getElementById('filter-tag').value = '';
+            document.getElementById('filter-eligible').value = '';
+            document.getElementById('search-input').value = '';
+            currentPage = 1;
+            loadLeads();
+        }
+        
+        function handleSearch() {
+            clearTimeout(window.searchTimeout);
+            window.searchTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadLeads();
+            }, 300);
+        }
+        
+        function toggleLead(leadId) {
+            if (selectedLeads.has(leadId)) {
+                selectedLeads.delete(leadId);
+            } else {
+                selectedLeads.add(leadId);
+            }
+            updateActionBar();
+            renderLeads(leads); // Re-render to show selection
+        }
+        
+        function toggleSelectAll() {
+            const checkbox = document.querySelector('.select-all-checkbox');
+            if (checkbox.checked) {
+                leads.forEach(lead => selectedLeads.add(lead.id));
+            } else {
+                leads.forEach(lead => selectedLeads.delete(lead.id));
+            }
+            updateActionBar();
+            renderLeads(leads);
+        }
+        
+        function clearSelection() {
+            selectedLeads.clear();
+            document.querySelector('.select-all-checkbox').checked = false;
+            updateActionBar();
+            renderLeads(leads);
+        }
+        
+        function updateActionBar() {
+            const bar = document.getElementById('action-bar');
+            const btn = document.getElementById('bulk-action-btn');
+            const count = selectedLeads.size;
+            
+            if (count > 0) {
+                bar.style.display = 'flex';
+                btn.style.display = 'inline-flex';
+                document.getElementById('selected-count').textContent = `${count} selected`;
+                document.getElementById('bulk-selected-count').textContent = `${count} leads selected`;
+            } else {
+                bar.style.display = 'none';
+                btn.style.display = 'none';
+            }
+        }
+        
+        function showBulkActions() {
+            document.getElementById('bulk-modal').classList.add('show');
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+        
+        async function previewFollowup(campaignRowId) {
+            try {
+                const response = await fetch('/api/followups/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ campaign_row_id: campaignRowId, tone: 'gentle' })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Cannot generate followup: ' + (error.detail || 'Unknown error'));
+                    return;
+                }
+                
+                currentDraft = await response.json();
+                
+                document.getElementById('followup-content').innerHTML = `
+                    <div class="followup-preview">
+                        <div class="followup-meta">
+                            <strong>To:</strong> ${currentDraft.recipient_email}<br>
+                            <strong>Original:</strong> ${currentDraft.original_subject || 'N/A'}<br>
+                            <strong>Campaign:</strong> ${currentDraft.campaign_name || 'N/A'}
+                        </div>
+                        <div style="margin-bottom: 0.75rem;">
+                            <strong style="font-size: 0.875rem; color: var(--color-gray-500);">Subject:</strong><br>
+                            ${currentDraft.subject}
+                        </div>
+                        <div>
+                            <strong style="font-size: 0.875rem; color: var(--color-gray-500);">Body:</strong><br>
+                            <pre style="background: white; padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--color-gray-200); margin-top: 0.5rem; white-space: pre-wrap;">${currentDraft.plain_text_body}</pre>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('followup-modal').classList.add('show');
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function editFollowup() {
+            if (!currentDraft) return;
+            
+            document.getElementById('edit-followup-subject').value = currentDraft.subject;
+            document.getElementById('edit-followup-body').value = currentDraft.plain_text_body;
+            
+            document.getElementById('edit-followup-modal').classList.add('show');
+        }
+        
+        async function saveFollowupEdit() {
+            if (!currentDraft) return;
+            
+            const subject = document.getElementById('edit-followup-subject').value;
+            const body = document.getElementById('edit-followup-body').value;
+            
+            try {
+                const response = await fetch(`/api/followups/drafts/${currentDraft.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subject, plain_text_body: body })
+                });
+                
+                if (response.ok) {
+                    currentDraft = await response.json();
+                    closeModal('edit-followup-modal');
+                    // Refresh preview
+                    previewFollowup(currentDraft.campaign_row_id);
+                }
+            } catch (error) {
+                alert('Failed to save: ' + error.message);
+            }
+        }
+        
+        async function sendFollowup() {
+            if (!currentDraft) return;
+            
+            const dryRun = false; // Set to true for testing
+            
+            try {
+                const response = await fetch('/api/followups/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ draft_id: currentDraft.id, dry_run: dryRun })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(result.message);
+                    closeModal('followup-modal');
+                    loadLeads();
+                    loadStats();
+                } else {
+                    alert('Failed: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function generateBulkFollowups() {
+            const tone = document.getElementById('bulk-tone').value;
+            
+            // First get eligible leads
+            try {
+                const response = await fetch('/api/followups/eligible-leads?page_size=50');
+                const eligible = await response.json();
+                
+                if (eligible.length === 0) {
+                    alert('No eligible leads found');
+                    return;
+                }
+                
+                if (!confirm(`Generate followup drafts for ${eligible.length} eligible leads?`)) {
+                    return;
+                }
+                
+                let generated = 0;
+                let failed = 0;
+                
+                for (const lead of eligible) {
+                    if (!lead.campaign_row_id) continue;
+                    
+                    try {
+                        const previewResponse = await fetch('/api/followups/preview', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                campaign_row_id: lead.campaign_row_id, 
+                                tone: tone 
+                            })
+                        });
+                        
+                        if (previewResponse.ok) {
+                            generated++;
+                        } else {
+                            failed++;
+                        }
+                    } catch (e) {
+                        failed++;
+                    }
+                }
+                
+                alert(`Generated ${generated} followup drafts (${failed} failed)`);
+                closeModal('bulk-modal');
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function bulkMarkResponded() {
+            if (selectedLeads.size === 0) return;
+            
+            if (!confirm(`Mark ${selectedLeads.size} leads as responded? This will prevent followups.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/leads/bulk-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lead_ids: Array.from(selectedLeads),
+                        action: 'update_status',
+                        status: 'responded'
+                    })
+                });
+                
+                const result = await response.json();
+                alert(result.message);
+                clearSelection();
+                loadLeads();
+                loadStats();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function bulkMarkActive() {
+            if (selectedLeads.size === 0) return;
+            
+            try {
+                const response = await fetch('/api/leads/bulk-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lead_ids: Array.from(selectedLeads),
+                        action: 'update_status',
+                        status: 'active'
+                    })
+                });
+                
+                const result = await response.json();
+                alert(result.message);
+                clearSelection();
+                loadLeads();
+                loadStats();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function showTagModal() {
+            const tagList = document.getElementById('tag-list');
+            tagList.innerHTML = tags.map(tag => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid var(--color-gray-100);">
+                    <span class="tag-badge" style="background: ${tag.color || '#e5e7eb'};">${tag.name}</span>
+                    <button onclick="deleteTag('${tag.id}')" class="btn btn-small btn-danger">Delete</button>
+                </div>
+            `).join('') || '<p style="color: var(--color-gray-500);">No tags yet</p>';
+            
+            document.getElementById('tag-modal').classList.add('show');
+        }
+        
+        async function createTag() {
+            const name = document.getElementById('new-tag-name').value.trim();
+            if (!name) return;
+            
+            try {
+                const response = await fetch('/api/leads/tags', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                
+                if (response.ok) {
+                    document.getElementById('new-tag-name').value = '';
+                    loadTags();
+                    showTagModal(); // Refresh
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function deleteTag(tagId) {
+            if (!confirm('Delete this tag?')) return;
+            
+            try {
+                await fetch(`/api/leads/tags/${tagId}`, { method: 'DELETE' });
+                loadTags();
+                showTagModal(); // Refresh
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function showLeadDetails(leadId) {
+            window.location.href = `/leads/${leadId}`;
+        }
+        
+        function showFollowupStats() {
+            // Could show a detailed modal with stats
+            loadStats();
+        }
+        
+        // Close modals on outside click
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.classList.remove('show');
+            }
+        };
+        
+        // Initialize
+        loadLeads();
+        loadStats();
+        loadTags();
+    </script>
+</body>
+</html>

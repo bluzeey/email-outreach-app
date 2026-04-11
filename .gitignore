@@ -32,6 +32,9 @@ dist/
 *.sqlite3
 outreach.db
 checkpoints.db
+*.db-shm
+*.db-wal
+*.db-journal
 
 # Uploaded files
 uploads/

@@ -659,6 +659,7 @@
         }
         
         function renderPlanEditForm(plan) {
+            const styleConstraints = (plan.style_constraints || []).join('\n');
             return `
                 <div class="section-card" style="background: #f0fdf4; border-color: #bbf7d0;">
                     <h3 style="color: #166534;">🎯 Campaign Plan (Editing)</h3>
@@ -674,6 +675,14 @@
                         <div class="schema-item" style="grid-column: 1 / -1;">
                             <label>Call to Action</label>
                             <textarea id="edit-cta" rows="2" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.cta || ''}</textarea>
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Subject Style <small>(e.g., "short and personalized")</small></label>
+                            <input type="text" id="edit-subject-style" value="${plan.subject_style || ''}" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">
+                        </div>
+                        <div class="schema-item" style="grid-column: 1 / -1;">
+                            <label>Style Constraints <small>(one per line)</small></label>
+                            <textarea id="edit-style-constraints" rows="3" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${styleConstraints}</textarea>
                         </div>
                         <div class="schema-item" style="grid-column: 1 / -1;">
                             <label>Campaign Context (Product/Service Description)</label>
@@ -708,11 +717,19 @@
         
         // Helper to get plan data from form
         function getPlanDataFromForm() {
+            const constraintsText = document.getElementById('edit-style-constraints').value;
+            const style_constraints = constraintsText
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+
             return {
                 inferred_goal: document.getElementById('edit-goal').value,
                 tone: document.getElementById('edit-tone').value,
                 cta: document.getElementById('edit-cta').value,
-                context: document.getElementById('edit-context').value
+                context: document.getElementById('edit-context').value,
+                subject_style: document.getElementById('edit-subject-style').value,
+                style_constraints: style_constraints
             };
         }
 

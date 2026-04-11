@@ -110,11 +110,13 @@ class CampaignExportResponse(BaseModel):
 
 class CampaignPlanUpdateRequest(BaseModel):
     """Update campaign plan request."""
-    
+
     inferred_goal: str | None = None
     tone: str | None = None
     cta: str | None = None
     context: str | None = None
+    subject_style: str | None = None
+    style_constraints: list[str] | None = None
 
 
 class CampaignRegenerateDraftsResponse(BaseModel):

@@ -1641,9 +1641,10 @@ async def update_campaign_plan(
                 detail=f"Cannot edit plan when campaign status is '{campaign.status.value}'."
             )
         
-        # Get current plan
-        current_plan = campaign.campaign_plan_json or {}
-        
+        # Get current plan - MAKE A COPY to ensure SQLAlchemy detects changes
+        current_plan = dict(campaign.campaign_plan_json or {})
+        old_goal = current_plan.get("inferred_goal", "").lower()
+
         # Update fields if provided
         if request.inferred_goal is not None:
             current_plan["inferred_goal"] = request.inferred_goal
@@ -1653,7 +1654,33 @@ async def update_campaign_plan(
             current_plan["cta"] = request.cta
         if request.context is not None:
             current_plan["context"] = request.context
-        
+        if request.subject_style is not None:
+            current_plan["subject_style"] = request.subject_style
+        if request.style_constraints is not None:
+            current_plan["style_constraints"] = request.style_constraints
+
+        # Auto-reset PR/media-specific settings if goal changed away from PR
+        new_goal = current_plan.get("inferred_goal", "").lower()
+        pr_keywords = ["pr", "media", "press", "coverage", "mention", "journalist", "publicity"]
+        was_pr = any(kw in old_goal for kw in pr_keywords)
+        is_pr = any(kw in new_goal for kw in pr_keywords)
+
+        if was_pr and not is_pr:
+            # Reset subject_style if it contains PR-specific patterns
+            subject_style = current_plan.get("subject_style", "")
+            if "media query" in subject_style.lower() or "coverage" in subject_style.lower():
+                current_plan["subject_style"] = "short and personalized"
+
+            # Remove PR-specific style constraints
+            old_constraints = current_plan.get("style_constraints", [])
+            pr_patterns = ["media outlet", "publication context", "press", "coverage", "journalist"]
+            new_constraints = [
+                c for c in old_constraints
+                if not any(p in c.lower() for p in pr_patterns)
+            ]
+            if len(new_constraints) != len(old_constraints):
+                current_plan["style_constraints"] = new_constraints
+
         # Save updated plan
         campaign.campaign_plan_json = current_plan
         await session.commit()

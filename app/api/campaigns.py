@@ -1704,7 +1704,7 @@ async def regenerate_campaign_drafts(
         if not campaign.inferred_schema_json:
             raise HTTPException(status_code=400, detail="No schema inferred for this campaign")
         
-        if not campaign.csv_path or not os.path.exists(campaign.csv_path):
+        if not campaign.csv_storage_path or not os.path.exists(campaign.csv_storage_path):
             raise HTTPException(status_code=400, detail="CSV file not found")
         
         # Import required services
@@ -1740,7 +1740,7 @@ async def regenerate_campaign_drafts(
             logger.warning(f"Could not fetch sender name/signature: {e}")
         
         # Load sample rows
-        df = DataLoader.load_file(campaign.csv_path)
+        df = DataLoader.load_file(campaign.csv_storage_path)
         sample_rows = CSVProfiler.get_sample_rows(df, 3)
         
         # Generate new drafts

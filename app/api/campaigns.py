@@ -1631,7 +1631,6 @@ async def update_campaign_plan(
         editable_statuses = [
             CampaignStatus.AWAITING_SCHEMA_REVIEW,
             CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
-            CampaignStatus.READY_TO_SEND,
             CampaignStatus.PAUSED,
             CampaignStatus.COMPLETED,  # Allow editing plan for future new leads
         ]
@@ -1691,7 +1690,6 @@ async def regenerate_campaign_drafts(
         editable_statuses = [
             CampaignStatus.AWAITING_SCHEMA_REVIEW,
             CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
-            CampaignStatus.READY_TO_SEND,
             CampaignStatus.PAUSED,
             CampaignStatus.COMPLETED,  # Allow regenerating sample drafts for reference
         ]

@@ -607,7 +607,8 @@
                 'awaiting_schema_review',
                 'awaiting_campaign_approval',
                 'ready_to_send',
-                'paused'
+                'paused',
+                'completed'  // Allow editing plan even after completion for future new leads
             ];
             return editableStatuses.includes(status);
         }
@@ -679,9 +680,12 @@
                             <textarea id="edit-context" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: var(--radius); font-family: inherit;">${plan.context || ''}</textarea>
                         </div>
                     </div>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                        <button onclick="savePlan()" class="btn btn-primary">
-                            💾 Save & Regenerate Drafts
+                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button onclick="savePlanOnly()" class="btn btn-primary">
+                            💾 Save Plan
+                        </button>
+                        <button onclick="savePlanAndRegenerate()" class="btn btn-secondary" title="Updates sample drafts for preview only - does not affect sent emails">
+                            🔄 Save & Regenerate Sample Drafts
                         </button>
                         <button onclick="cancelEdit()" class="btn btn-secondary">
                             Cancel
@@ -702,65 +706,114 @@
             loadCampaign();
         }
         
-        async function savePlan() {
+        // Helper to get plan data from form
+        function getPlanDataFromForm() {
+            return {
+                inferred_goal: document.getElementById('edit-goal').value,
+                tone: document.getElementById('edit-tone').value,
+                cta: document.getElementById('edit-cta').value,
+                context: document.getElementById('edit-context').value
+            };
+        }
+
+        // Save plan only (no draft regeneration)
+        async function savePlanOnly() {
             const confirmed = confirm(
-                "This will update your campaign plan and regenerate all sample email drafts.\n\n" +
-                "Are you sure you want to continue?"
+                "Save campaign plan changes?\n\n" +
+                "This updates the plan that will be used for any new leads you add later. " +
+                "Already sent emails will not be affected."
             );
-            
+
             if (!confirmed) return;
-            
+
             const statusDiv = document.getElementById('edit-status');
-            statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Saving plan and regenerating drafts...</span>';
-            
+            statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Saving plan...</span>';
+
             try {
-                // Get values from form
-                const planData = {
-                    inferred_goal: document.getElementById('edit-goal').value,
-                    tone: document.getElementById('edit-tone').value,
-                    cta: document.getElementById('edit-cta').value,
-                    context: document.getElementById('edit-context').value
-                };
-                
+                const planData = getPlanDataFromForm();
+
+                const saveResponse = await fetch(`/api/campaigns/${campaignId}/plan`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(planData)
+                });
+
+                if (!saveResponse.ok) {
+                    const error = await saveResponse.json();
+                    throw new Error(error.detail || 'Failed to save plan');
+                }
+
+                // Exit edit mode and refresh
+                isEditingPlan = false;
+                await loadCampaign();
+
+                statusDiv.innerHTML = '<span style="color: var(--color-success);">✅ Plan saved successfully!</span>';
+
+                setTimeout(() => {
+                    const status = document.getElementById('edit-status');
+                    if (status) status.innerHTML = '';
+                }, 3000);
+
+            } catch (error) {
+                statusDiv.innerHTML = `<span style="color: var(--color-danger);">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        // Save plan and regenerate sample drafts (for preview)
+        async function savePlanAndRegenerate() {
+            const confirmed = confirm(
+                "Save plan and regenerate sample email drafts?\n\n" +
+                "This will update the sample drafts shown for preview only. " +
+                "Already sent emails will NOT be changed.\n\n" +
+                "New leads added later will use the updated plan automatically."
+            );
+
+            if (!confirmed) return;
+
+            const statusDiv = document.getElementById('edit-status');
+            statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Saving plan and regenerating sample drafts...</span>';
+
+            try {
+                const planData = getPlanDataFromForm();
+
                 // 1. Save the plan
                 const saveResponse = await fetch(`/api/campaigns/${campaignId}/plan`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(planData)
                 });
-                
+
                 if (!saveResponse.ok) {
                     const error = await saveResponse.json();
                     throw new Error(error.detail || 'Failed to save plan');
                 }
-                
-                // 2. Regenerate drafts
-                statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Regenerating email drafts...</span>';
-                
+
+                // 2. Regenerate sample drafts
+                statusDiv.innerHTML = '<span style="color: var(--color-primary);">⏳ Regenerating sample drafts...</span>';
+
                 const regenResponse = await fetch(`/api/campaigns/${campaignId}/regenerate-drafts`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
-                
+
                 if (!regenResponse.ok) {
                     const error = await regenResponse.json();
                     throw new Error(error.detail || 'Failed to regenerate drafts');
                 }
-                
+
                 const result = await regenResponse.json();
-                
+
                 // 3. Exit edit mode and refresh
                 isEditingPlan = false;
                 await loadCampaign();
-                
-                statusDiv.innerHTML = '<span style="color: var(--color-success);">✅ Plan saved and drafts regenerated successfully!</span>';
-                
-                // Clear success message after 3 seconds
+
+                statusDiv.innerHTML = '<span style="color: var(--color-success);">✅ Plan saved and sample drafts regenerated!</span>';
+
                 setTimeout(() => {
                     const status = document.getElementById('edit-status');
                     if (status) status.innerHTML = '';
                 }, 3000);
-                
+
             } catch (error) {
                 statusDiv.innerHTML = `<span style="color: var(--color-danger);">❌ Error: ${error.message}</span>`;
             }

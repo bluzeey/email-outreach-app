@@ -1625,17 +1625,21 @@ async def update_campaign_plan(
             raise HTTPException(status_code=404, detail="Campaign not found")
         
         # Check if campaign can be edited
+        # Editing plan is allowed at any stage - even for completed campaigns
+        # This allows users to update the plan for future new leads
+        # The plan is used when generating drafts for new leads (QUEUED/NORMALIZED rows)
         editable_statuses = [
             CampaignStatus.AWAITING_SCHEMA_REVIEW,
             CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
             CampaignStatus.READY_TO_SEND,
             CampaignStatus.PAUSED,
+            CampaignStatus.COMPLETED,  # Allow editing plan for future new leads
         ]
-        
+
         if campaign.status not in editable_statuses:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot edit plan when campaign status is '{campaign.status.value}'. Editing is only allowed before sending starts."
+                detail=f"Cannot edit plan when campaign status is '{campaign.status.value}'."
             )
         
         # Get current plan
@@ -1681,14 +1685,17 @@ async def regenerate_campaign_drafts(
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         
-        # Check if campaign can be edited
+        # Check if campaign can have drafts regenerated
+        # Sample drafts are just previews - they can be regenerated anytime
+        # This does NOT affect already sent emails, only the preview samples
         editable_statuses = [
             CampaignStatus.AWAITING_SCHEMA_REVIEW,
             CampaignStatus.AWAITING_CAMPAIGN_APPROVAL,
             CampaignStatus.READY_TO_SEND,
             CampaignStatus.PAUSED,
+            CampaignStatus.COMPLETED,  # Allow regenerating sample drafts for reference
         ]
-        
+
         if campaign.status not in editable_statuses:
             raise HTTPException(
                 status_code=400,

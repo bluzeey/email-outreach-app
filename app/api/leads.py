@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.db.base import AsyncSessionLocal
@@ -150,7 +151,7 @@ async def list_leads(
     session: AsyncSession = Depends(get_session),
 ):
     """List leads with filtering."""
-    query = select(Lead)
+    query = select(Lead).options(selectinload(Lead.tags))
     
     # Apply filters
     if status:
@@ -231,7 +232,10 @@ async def get_lead(
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single lead by ID."""
-    lead = await session.get(Lead, lead_id)
+    result = await session.execute(
+        select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+    )
+    lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
@@ -260,7 +264,10 @@ async def update_lead(
     session: AsyncSession = Depends(get_session),
 ):
     """Update lead information."""
-    lead = await session.get(Lead, lead_id)
+    result = await session.execute(
+        select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+    )
+    lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
@@ -317,7 +324,10 @@ async def add_tag_to_lead(
     session: AsyncSession = Depends(get_session),
 ):
     """Add a tag to a lead."""
-    lead = await session.get(Lead, lead_id)
+    result = await session.execute(
+        select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+    )
+    lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     
@@ -345,7 +355,10 @@ async def remove_tag_from_lead(
     session: AsyncSession = Depends(get_session),
 ):
     """Remove a tag from a lead."""
-    lead = await session.get(Lead, lead_id)
+    result = await session.execute(
+        select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+    )
+    lead = result.scalar_one_or_none()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     

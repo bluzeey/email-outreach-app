@@ -5,6 +5,7 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.db.models import Campaign, CampaignRow, Lead, LeadStatus, LeadTag
@@ -212,7 +213,10 @@ class LeadService:
     
     async def add_tag_to_lead(self, lead_id: str, tag_id: str) -> bool:
         """Add a tag to a lead."""
-        lead = await self.session.get(Lead, lead_id)
+        result = await self.session.execute(
+            select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+        )
+        lead = result.scalar_one_or_none()
         tag = await self.session.get(LeadTag, tag_id)
         
         if not lead or not tag:
@@ -228,7 +232,10 @@ class LeadService:
     
     async def remove_tag_from_lead(self, lead_id: str, tag_id: str) -> bool:
         """Remove a tag from a lead."""
-        lead = await self.session.get(Lead, lead_id)
+        result = await self.session.execute(
+            select(Lead).options(selectinload(Lead.tags)).where(Lead.id == lead_id)
+        )
+        lead = result.scalar_one_or_none()
         tag = await self.session.get(LeadTag, tag_id)
         
         if not lead or not tag:

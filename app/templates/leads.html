@@ -421,11 +421,15 @@
             
             try {
                 const response = await fetch(url);
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(`Server error ${response.status}: ${text.slice(0, 100)}`);
+                }
                 const data = await response.json();
-                
+
                 leads = data.leads;
                 totalLeads = data.total;
-                
+
                 renderLeads(leads);
                 renderPagination();
                 updateActionBar();

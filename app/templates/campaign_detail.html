@@ -354,6 +354,9 @@
         // Global variable to track if there are failed emails
         let hasFailedEmails = false;
         
+        // Global variable to track if Run button is currently in progress
+        let isRunning = false;
+        
         function getActionButtons(campaign) {
             const buttons = [];
             
@@ -1232,6 +1235,19 @@
         }
         
         async function runCampaign() {
+            // Prevent double-click - already running
+            if (isRunning) {
+                return;
+            }
+            
+            // Set running state and update UI
+            isRunning = true;
+            const runButton = document.querySelector('button[onclick="runCampaign()"]');
+            if (runButton) {
+                runButton.disabled = true;
+                runButton.textContent = '⏳ Running...';
+            }
+            
             // Start polling for real-time updates
             startSendPolling();
 
@@ -1244,12 +1260,26 @@
                     location.reload();
                 } else {
                     alert('Failed: ' + data.message);
+                    // Re-enable button on failure
+                    isRunning = false;
+                    if (runButton) {
+                        runButton.disabled = false;
+                        runButton.textContent = '▶ Run';
+                    }
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
+                // Re-enable button on error
+                isRunning = false;
+                if (runButton) {
+                    runButton.disabled = false;
+                    runButton.textContent = '▶ Run';
+                }
             } finally {
-                // Stop polling after request completes
-                stopSendPolling();
+                // Stop polling after request completes (only if not reloading)
+                if (!isRunning) {
+                    stopSendPolling();
+                }
             }
         }
         

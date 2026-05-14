@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-print_header() {
+print_header() {    
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}  Email Outreach App - Dev Server${NC}"
     echo -e "${BLUE}========================================${NC}"
@@ -69,8 +69,8 @@ setup_venv() {
 install_deps() {
     print_status "Checking dependencies..."
     
-    # Check if key runtime dependencies are available in the active venv
-    if python -c "import fastapi, uvicorn" 2>/dev/null; then
+    # Verify an installed runtime dependency, not the local source package.
+    if python -c "import uvicorn" 2>/dev/null; then
         print_success "Dependencies already installed"
         return
     fi

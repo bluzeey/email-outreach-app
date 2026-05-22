@@ -259,8 +259,12 @@ Respond with only valid JSON."""
             tone="professional",
             style_constraints=[
                 "Keep emails concise (under 150 words)",
-                "Use natural, conversational language",
+                "Use natural, conversational language — vary sentence length and rhythm",
                 "Avoid overly salesy language",
+                "Avoid AI patterns: no inflated significance words (pivotal, crucial, testament), no promotional adjectives (vibrant, groundbreaking, stunning), no vague attributions (experts say, observers note), no superficial -ing phrases (highlighting, symbolizing), no filler phrases (in order to, due to the fact that), no generic positive conclusions (exciting times lie ahead)",
+                "Prefer simple verbs: is/are/has instead of serves as/stands as/boasts",
+                "Use straight quotes, not curly quotes. Do not use em-dashes.",
+                "Write with a pulse — opinions, specifics, and honest first-person voice when appropriate",
             ],
             cta="Reply to this email",
             subject_style="short and personalized",

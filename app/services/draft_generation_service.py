@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from app.core.humanizer import HUMANIZER_PROMPT_FRAGMENT, humanize_post_process
 from app.core.logging import get_logger
 from app.schemas.csv_inference import CampaignPlan, CsvSchemaInference
 from app.schemas.draft import GeneratedEmail
@@ -155,10 +156,10 @@ Requirements:
 - Reference the product/service from the Campaign Context naturally
 - Personalize using the recipient information provided
 - Never fabricate facts not in the data
-- Use natural, conversational language
 - Include the call-to-action naturally
 - No generic templates like "I hope this email finds you well"
 {sign_off_instruction}
+{HUMANIZER_PROMPT_FRAGMENT}
 
 Respond with ONLY valid JSON:
 {{
@@ -189,10 +190,10 @@ Respond with ONLY valid JSON:
                 if field not in data or not data[field]:
                     raise ValueError(f"Missing required field: {field}")
             
-            # Post-process: Add signature
-            plain_body = data["plain_text_body"]
-            html_body = data["html_body"]
-            
+            # Post-process: humanize output to strip remaining AI artifacts
+            plain_body = humanize_post_process(data["plain_text_body"])
+            html_body = humanize_post_process(data["html_body"])
+
             # Use custom signature if provided, otherwise use sender_name
             if signature:
                 # Add custom signature
@@ -221,10 +222,6 @@ Respond with ONLY valid JSON:
                         html_body = re.sub(r'Kind regards,<br>.*?</p>', '', html_body)
                     # Add proper signature
                     html_body = html_body.rstrip() + f"\n\n<p>Kind regards,<br>{sender_name}</p>"
-            
-            # Post-process: Remove em-dashes and replace with regular hyphens
-            plain_body = plain_body.replace("—", " - ")
-            html_body = html_body.replace("—", " - ")
             
             # Determine if review needed
             needs_review = data.get("confidence", 0.8) < 0.7

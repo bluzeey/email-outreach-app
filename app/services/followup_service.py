@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.humanizer import HUMANIZER_PROMPT_FRAGMENT, humanize_post_process
 from app.core.logging import get_logger
 from app.db.models import (
     Campaign,
@@ -187,6 +188,7 @@ Requirements:
 - Make it easy for them to respond
 - No "just checking in" or "circling back" language
 - Reference the original email naturally, not mechanically
+{HUMANIZER_PROMPT_FRAGMENT}
 
 Respond with ONLY valid JSON:
 {{
@@ -209,9 +211,9 @@ Respond with ONLY valid JSON:
             data = json.loads(content.strip())
             
             return (
-                data["subject"],
-                data["plain_text_body"],
-                data["html_body"],
+                humanize_post_process(data["subject"]),
+                humanize_post_process(data["plain_text_body"]),
+                humanize_post_process(data["html_body"]),
             )
             
         except Exception as e:

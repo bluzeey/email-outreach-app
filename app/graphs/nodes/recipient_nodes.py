@@ -257,6 +257,16 @@ class RecipientGraphNodes:
             logger.error(f"Failed to generate draft: {e}")
             state.errors.append(f"Draft generation error: {str(e)}")
             state.status = "failed"
+            # Persist failure to DB with retry tracking
+            try:
+                campaign_row = await self.session.get(CampaignRow, state.recipient_id)
+                if campaign_row:
+                    campaign_row.status = RowStatus.FAILED
+                    campaign_row.error_message = f"[DRAFT] {str(e)}"
+                    campaign_row.retries = (campaign_row.retries or 0) + 1
+                    await self.session.commit()
+            except Exception as db_err:
+                logger.error(f"Failed to persist draft failure to DB: {db_err}")
 
         return state
     
@@ -563,9 +573,10 @@ class RecipientGraphNodes:
                 state.status = "failed"
                 state.errors.append(f"Send failed: {error_msg}")
                 
-                # Update DB
+                # Update DB with retry tracking
                 campaign_row.status = RowStatus.FAILED
-                campaign_row.error_message = error_msg
+                campaign_row.error_message = f"[SEND] {error_msg}"
+                campaign_row.retries = (campaign_row.retries or 0) + 1
                 await self.session.commit()
         
         except Exception as e:

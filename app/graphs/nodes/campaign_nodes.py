@@ -516,8 +516,9 @@ class CampaignGraphNodes:
                 except Exception as draft_error:
                     logger.error(f"Failed to generate draft for row {campaign_row.id}: {draft_error}")
                     draft_errors += 1
-                    campaign_row.error_message = f"Draft generation failed: {str(draft_error)}"
+                    campaign_row.error_message = f"[DRAFT] Draft generation failed: {str(draft_error)}"
                     campaign_row.status = RowStatus.FAILED
+                    campaign_row.retries = (campaign_row.retries or 0) + 1
                     # Do NOT send if AI generation failed — no template fallback
                 
                 # Flush every 10 rows to avoid memory issues (commit happens at API level)

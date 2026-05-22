@@ -865,7 +865,7 @@ async def run_campaign(
 
         # Process QUEUED/NORMALIZED rows (generate draft + send)
         processed = 0
-        failed = 0
+        failed_count = 0
         for row in process_rows:
             try:
                 await _process_recipient_row(session, campaign, row)
@@ -875,8 +875,9 @@ async def run_campaign(
             except Exception as e:
                 logger.error(f"Failed to process row {row.id}: {e}")
                 row.status = RowStatus.FAILED
-                row.error_message = str(e)
-                failed += 1
+                row.error_message = f"[DRAFT] {str(e)}"
+                row.retries = (row.retries or 0) + 1
+                failed_count += 1
                 await session.commit()
 
         # Send GENERATED rows directly (drafts already exist, just send)
@@ -889,9 +890,38 @@ async def run_campaign(
             except Exception as e:
                 logger.error(f"Failed to send row {row.id}: {e}")
                 row.status = RowStatus.FAILED
-                row.error_message = str(e)
-                failed += 1
+                row.error_message = f"[SEND] {str(e)}"
+                row.retries = (row.retries or 0) + 1
+                failed_count += 1
                 await session.commit()
+
+        # Auto-retry FAILED rows that haven't exceeded retry limit
+        result = await session.execute(
+            select(CampaignRow).where(
+                CampaignRow.campaign_id == campaign_id,
+                CampaignRow.status == RowStatus.FAILED,
+                CampaignRow.retries < settings.MAX_DRAFT_RETRIES
+            )
+        )
+        retryable_rows = result.scalars().all()
+
+        if retryable_rows:
+            logger.info(f"[AUTO-RETRY] Found {len(retryable_rows)} failed rows to retry for campaign {campaign_id}")
+            for row in retryable_rows:
+                try:
+                    attempted = await _retry_single_row(session, campaign, row)
+                    if attempted:
+                        processed += 1
+                        if row.status == RowStatus.FAILED:
+                            failed_count += 1
+                    await session.commit()
+                except Exception as e:
+                    logger.error(f"[AUTO-RETRY] Failed to retry row {row.id}: {e}")
+                    row.status = RowStatus.FAILED
+                    row.error_message = f"[DRAFT] Retry failed: {str(e)}"
+                    row.retries = (row.retries or 0) + 1
+                    failed_count += 1
+                    await session.commit()
 
         # Final refresh of campaign state
         # Check if all rows are in terminal states (sent, failed, skipped, ineligible)
@@ -919,7 +949,7 @@ async def run_campaign(
             # All rows processed (either sent, failed, skipped, or ineligible)
             campaign.status = CampaignStatus.COMPLETED
             await session.commit()
-        elif failed > 0 or status_counts.get('failed', 0) > 0:
+        elif failed_count > 0 or status_counts.get('failed', 0) > 0:
             # Keep as RUNNING if there are failures (allows retry)
             campaign.status = CampaignStatus.RUNNING
             await session.commit()
@@ -936,6 +966,156 @@ async def run_campaign(
     except Exception as e:
         logger.error(f"Failed to run campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Run failed: {str(e)}")
+
+
+async def _retry_single_row(session: AsyncSession, campaign: Campaign, row: CampaignRow) -> bool:
+    """Retry a single failed row. Returns True if retry was attempted.
+
+    - Draft failures: reset to QUEUED and run full recipient graph (regenerates draft + sends)
+    - Send failures: if draft exists, send directly without regenerating
+    - If max retries exceeded, skip
+    """
+    max_retries = settings.MAX_DRAFT_RETRIES
+    current_retries = row.retries or 0
+
+    if current_retries >= max_retries:
+        logger.info(f"[RETRY] Row {row.id} skipped — already at max retries ({current_retries}/{max_retries})")
+        return False
+
+    error_msg = row.error_message or ""
+    is_send_failure = error_msg.startswith("[SEND]")
+    is_draft_failure = error_msg.startswith("[DRAFT]")
+
+    logger.info(f"[RETRY] Row {row.id} — retries={current_retries}, failure_type={'send' if is_send_failure else 'draft'}")
+
+    if is_send_failure:
+        # Check if draft exists
+        from app.db.models import EmailDraft
+        result = await session.execute(
+            select(EmailDraft)
+            .where(EmailDraft.campaign_row_id == row.id)
+            .order_by(EmailDraft.created_at.desc())
+            .limit(1)
+        )
+        draft = result.scalar_one_or_none()
+
+        if draft:
+            # Reset status and send directly without regenerating draft
+            row.status = RowStatus.GENERATED
+            row.error_message = None
+            await session.flush()
+            await _send_recipient_email(session, campaign, row)
+            return True
+        else:
+            # No draft — treat as draft failure and regenerate
+            logger.warning(f"[RETRY] Row {row.id} had send failure but no draft found. Will regenerate.")
+            is_send_failure = False
+            is_draft_failure = True
+
+    if is_draft_failure or not is_send_failure:
+        # Reset to QUEUED and run full graph
+        row.status = RowStatus.QUEUED
+        row.error_message = None
+        await session.flush()
+        await _process_recipient_row(session, campaign, row)
+        return True
+
+    return False
+
+
+@router.post("/{campaign_id}/retry-failed", response_model=CampaignActionResponse)
+async def retry_failed_rows(
+    campaign_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Retry all failed rows for a campaign.
+
+    - Draft failures: regenerates draft via AI and attempts send
+    - Send failures: resends existing draft without regeneration
+    - Skips rows that have reached MAX_DRAFT_RETRIES
+    """
+    try:
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+        if campaign.status not in [CampaignStatus.RUNNING, CampaignStatus.PAUSED, CampaignStatus.COMPLETED]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Campaign must be RUNNING, PAUSED, or COMPLETED to retry. Current: {campaign.status.value}"
+            )
+
+        # Find all FAILED rows
+        result = await session.execute(
+            select(CampaignRow).where(
+                CampaignRow.campaign_id == campaign_id,
+                CampaignRow.status == RowStatus.FAILED
+            )
+        )
+        failed_rows = result.scalars().all()
+
+        if not failed_rows:
+            return CampaignActionResponse(
+                success=True,
+                message="No failed rows to retry.",
+                campaign_id=campaign_id,
+                new_status=campaign.status.value,
+            )
+
+        campaign.status = CampaignStatus.RUNNING
+        await session.commit()
+
+        retried = 0
+        skipped_max_retries = 0
+        still_failed = 0
+
+        for row in failed_rows:
+            attempted = await _retry_single_row(session, campaign, row)
+            if attempted:
+                retried += 1
+                if row.status == RowStatus.FAILED:
+                    still_failed += 1
+            else:
+                skipped_max_retries += 1
+            await session.commit()
+
+        # Refresh status counts
+        from sqlalchemy import func
+        status_counts_result = await session.execute(
+            select(CampaignRow.status, func.count(CampaignRow.id))
+            .where(CampaignRow.campaign_id == campaign_id)
+            .group_by(CampaignRow.status)
+        )
+        status_counts = {status.value: count for status, count in status_counts_result}
+        total_rows = sum(status_counts.values())
+        terminal_states = {'sent', 'failed', 'skipped', 'ineligible'}
+        completed_rows = sum(status_counts.get(s, 0) for s in terminal_states)
+        pending = total_rows - completed_rows
+
+        if pending == 0:
+            campaign.status = CampaignStatus.COMPLETED
+        elif status_counts.get('failed', 0) > 0:
+            campaign.status = CampaignStatus.RUNNING
+        await session.commit()
+
+        msg_parts = [f"Retried {retried} failed rows"]
+        if still_failed:
+            msg_parts.append(f"{still_failed} still failed")
+        if skipped_max_retries:
+            msg_parts.append(f"{skipped_max_retries} skipped (max retries reached)")
+
+        return CampaignActionResponse(
+            success=True,
+            message=". ".join(msg_parts) + ".",
+            campaign_id=campaign_id,
+            new_status=campaign.status.value,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to retry campaign: {e}")
+        raise HTTPException(status_code=500, detail=f"Retry failed: {str(e)}")
 
 
 @router.post("/{campaign_id}/toggle-dry-run", response_model=CampaignActionResponse)

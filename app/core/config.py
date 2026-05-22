@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     MAX_SEND_RATE_PER_MINUTE: int = 30
     MAX_CONCURRENT_SENDS: int = 3
     
+    # Retry Logic
+    MAX_DRAFT_RETRIES: int = 3
+    
     # Security (auto-generated if not set - for OAuth token encryption)
     ENCRYPTION_KEY: str = ""
     

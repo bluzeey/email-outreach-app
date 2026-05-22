@@ -220,41 +220,6 @@ Respond with ONLY valid JSON:
             logger.error(f"LLM generation failed: {e}")
             raise RuntimeError(f"Follow-up draft generation failed: {e}") from e
     
-    def _generate_fallback_followup(
-        self,
-        original_subject: str,
-        recipient_name: str,
-        tone: str,
-    ) -> tuple[str, str, str]:
-        """Generate fallback followup template."""
-        name = recipient_name or "there"
-        
-        subject = f"Re: {original_subject}"
-        
-        if tone == "gentle":
-            plain = f"""Hi {name},
-
-I wanted to follow up on my email below. Would love to hear your thoughts when you have a moment.
-
-Best regards"""
-        elif tone == "direct":
-            plain = f"""Hi {name},
-
-Following up on my previous email. Are you interested in discussing this further?
-
-Best regards"""
-        else:
-            plain = f"""Hi {name},
-
-Just following up on the email I sent last week. Let me know if you'd like to chat.
-
-Best regards"""
-        
-        html = plain.replace("\n\n", "</p><p>").replace("\n", "<br>")
-        html = f"<p>{html}</p>"
-        
-        return subject, plain, html
-    
     def _summarize_context(self, original_body: str) -> str:
         """Create a brief summary of the original email context."""
         # Simple truncation-based summary

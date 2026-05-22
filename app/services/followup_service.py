@@ -218,10 +218,7 @@ Respond with ONLY valid JSON:
             
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
-            # Fallback template
-            return self._generate_fallback_followup(
-                original_subject, recipient_name, tone
-            )
+            raise RuntimeError(f"Follow-up draft generation failed: {e}") from e
     
     def _generate_fallback_followup(
         self,

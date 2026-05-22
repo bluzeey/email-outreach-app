@@ -517,7 +517,8 @@ class CampaignGraphNodes:
                     logger.error(f"Failed to generate draft for row {campaign_row.id}: {draft_error}")
                     draft_errors += 1
                     campaign_row.error_message = f"Draft generation failed: {str(draft_error)}"
-                    # Keep row as QUEUED so it can be retried
+                    campaign_row.status = RowStatus.FAILED
+                    # Do NOT send if AI generation failed — no template fallback
                 
                 # Flush every 10 rows to avoid memory issues (commit happens at API level)
                 if len(row_ids) % 10 == 0:

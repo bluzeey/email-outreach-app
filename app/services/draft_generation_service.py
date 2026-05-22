@@ -33,7 +33,11 @@ class DraftGenerationService:
         sender_name: str | None = None,
         signature: str | None = None,
     ) -> GeneratedEmail:
-        """Generate personalized email draft for a single row."""
+        """Generate personalized email draft for a single row.
+
+        Raises:
+            RuntimeError: If the LLM client is unavailable or generation fails.
+        """
         
         # Extract recipient email
         recipient_email = None
@@ -45,21 +49,16 @@ class DraftGenerationService:
             schema, row_data
         )
         
-        # Generate using LLM if available
-        if self.llm_client:
-            try:
-                draft = await self._generate_with_llm(
-                    schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name, signature
-                )
-                if draft:
-                    return draft
-            except Exception as e:
-                logger.error(f"LLM generation failed, using template: {e}")
+        if not self.llm_client:
+            raise RuntimeError("No LLM client available for draft generation")
         
-        # Fallback to template-based generation
-        return self._generate_with_template(
+        draft = await self._generate_with_llm(
             schema, campaign_plan, row_data, personalization_context, recipient_email, sender_name, signature
         )
+        if draft:
+            return draft
+        
+        raise RuntimeError("LLM draft generation returned empty result")
     
     def _build_personalization_context(
         self,

@@ -1674,6 +1674,125 @@ async def update_recipient_draft(
         raise HTTPException(status_code=500, detail=f"Failed to update draft: {str(e)}")
 
 
+@router.post("/{campaign_id}/rows/{row_id}/regenerate-draft", response_model=EmailDraftResponse)
+async def regenerate_recipient_draft(
+    campaign_id: str,
+    row_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Regenerate email draft for a specific recipient using AI.
+
+    This creates a new AI-generated draft, overwriting the previous one.
+    Useful when the original draft was poor or failed.
+    """
+    try:
+        # Verify campaign exists
+        campaign = await session.get(Campaign, campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+        # Get the row
+        row = await session.get(CampaignRow, row_id)
+        if not row or row.campaign_id != campaign_id:
+            raise HTTPException(status_code=404, detail="Recipient not found")
+
+        # Get schema and plan
+        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
+        from app.services.draft_generation_service import DraftGenerationService
+        from app.db.models import EmailDraft, GmailAccount
+
+        if not campaign.inferred_schema_json or not campaign.campaign_plan_json:
+            raise HTTPException(status_code=400, detail="Campaign schema or plan not available")
+
+        schema = CsvSchemaInference(**campaign.inferred_schema_json)
+        plan = CampaignPlan(**campaign.campaign_plan_json)
+
+        # Get sender name and signature
+        sender_name = None
+        signature = None
+        if campaign.gmail_account_id:
+            gmail_account = await session.get(GmailAccount, campaign.gmail_account_id)
+            if gmail_account:
+                sender_name = gmail_account.sender_name
+                signature = gmail_account.signature
+
+        # Generate new draft
+        draft_service = DraftGenerationService()
+        new_draft = await draft_service.generate_draft(
+            schema, plan, row.raw_row_json or {}, sender_name, signature
+        )
+
+        # Save to DB (upsert - update existing or create new)
+        result = await session.execute(
+            select(EmailDraft)
+            .where(EmailDraft.campaign_row_id == row_id)
+            .order_by(EmailDraft.created_at.desc())
+            .limit(1)
+        )
+        existing_draft = result.scalar_one_or_none()
+
+        if existing_draft:
+            existing_draft.subject = new_draft.subject
+            existing_draft.plain_text_body = new_draft.plain_text_body
+            existing_draft.html_body = new_draft.html_body
+            existing_draft.personalization_fields_used = new_draft.personalization_fields_used
+            existing_draft.key_claims_used = new_draft.key_claims_used
+            existing_draft.generation_confidence = int(new_draft.confidence * 100)
+            existing_draft.needs_human_review = new_draft.needs_human_review
+            existing_draft.review_reasons = new_draft.review_reasons
+            draft_id = existing_draft.id
+        else:
+            email_draft = EmailDraft(
+                campaign_row_id=row_id,
+                subject=new_draft.subject,
+                plain_text_body=new_draft.plain_text_body,
+                html_body=new_draft.html_body,
+                personalization_fields_used=new_draft.personalization_fields_used,
+                key_claims_used=new_draft.key_claims_used,
+                generation_confidence=int(new_draft.confidence * 100),
+                needs_human_review=new_draft.needs_human_review,
+                review_reasons=new_draft.review_reasons,
+            )
+            session.add(email_draft)
+            draft_id = email_draft.id
+
+        # Update row status
+        row.status = RowStatus.GENERATED
+        row.error_message = None
+        await session.commit()
+
+        # Refresh to get the draft object with ID
+        if existing_draft:
+            await session.refresh(existing_draft)
+            draft = existing_draft
+        else:
+            result = await session.execute(
+                select(EmailDraft).where(EmailDraft.id == draft_id)
+            )
+            draft = result.scalar_one()
+
+        return EmailDraftResponse(
+            id=draft.id,
+            campaign_row_id=draft.campaign_row_id,
+            to=row.recipient_email,
+            subject=draft.subject,
+            plain_text_body=draft.plain_text_body,
+            html_body=draft.html_body,
+            personalization_fields_used=draft.personalization_fields_used or [],
+            key_claims_used=draft.key_claims_used or [],
+            generation_confidence=draft.generation_confidence,
+            needs_human_review=draft.needs_human_review,
+            review_reasons=draft.review_reasons or [],
+            created_at=draft.created_at.isoformat() if draft.created_at else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to regenerate draft: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate draft: {str(e)}")
+
+
 @router.get("/{campaign_id}/export", response_model=CampaignExportResponse)
 async def export_campaign(
     campaign_id: str,

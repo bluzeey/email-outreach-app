@@ -1495,6 +1495,7 @@
                             <div class="modal-footer">
                                 <div id="view-actions">
                                     <button onclick="switchToEditMode()" class="btn btn-primary">✏️ Edit</button>
+                                    <button onclick="regenerateDraft()" class="btn btn-secondary" title="Generate a new AI draft for this recipient">🤖 AI Regenerate</button>
                                     <button onclick="closeModal()" class="btn btn-secondary">Close</button>
                                 </div>
                                 <div id="edit-actions" style="display: none;">
@@ -1571,6 +1572,53 @@
             }
         }
         
+        async function regenerateDraft() {
+            if (!currentRowId) return;
+
+            if (!confirm('Generate a new AI draft for this recipient? This will overwrite the current draft.')) {
+                return;
+            }
+
+            const regenerateBtn = document.querySelector('#view-actions button[onclick="regenerateDraft()"]');
+            if (regenerateBtn) {
+                regenerateBtn.disabled = true;
+                regenerateBtn.textContent = '⏳ Regenerating...';
+            }
+
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/rows/${currentRowId}/regenerate-draft`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to regenerate draft');
+                }
+
+                // Update the modal with the new draft
+                document.getElementById('view-subject').textContent = data.subject;
+                document.getElementById('view-body').textContent = data.plain_text_body;
+
+                // Also update the edit fields
+                document.getElementById('edit-subject').value = data.subject;
+                document.getElementById('edit-body').value = data.plain_text_body;
+
+                // Show success and refresh rows list
+                loadRows(totalRows, currentPage);
+                alert('Draft regenerated successfully!');
+
+            } catch (error) {
+                alert('Failed to regenerate draft: ' + error.message);
+            } finally {
+                if (regenerateBtn) {
+                    regenerateBtn.disabled = false;
+                    regenerateBtn.textContent = '🤖 AI Regenerate';
+                }
+            }
+        }
+
         function closeModal() {
             const modal = document.getElementById('draft-modal');
             if (modal) modal.remove();

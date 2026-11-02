@@ -1,1 +1,1 @@
-""", 
+"""Template resources package."""

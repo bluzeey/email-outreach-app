@@ -379,8 +379,8 @@
                 buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
             }
 
-            // Show Run button for CREATED, PAUSED, and COMPLETED (for newly added leads)
-            if (['created', 'paused', 'completed'].includes(campaign.status)) {
+            // A fresh upload waits for Analyze; Run is for prepared recipients.
+            if (['paused', 'completed'].includes(campaign.status)) {
                 const runLabel = campaign.status === 'completed' ? '▶ Run (New Leads)' : '▶ Run';
                 buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">${runLabel}</button>`);
             }
@@ -1300,10 +1300,12 @@
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/export?format=csv`);
                 const data = await response.json();
-                
-                if (data.download_url) {
-                    window.open(data.download_url, '_blank');
+                if (!response.ok || !data.download_url) {
+                    throw new Error(data.detail || 'The export could not be prepared. Please try again.');
                 }
+                // An awaited request can lose the user gesture required for a popup.
+                // A same-tab attachment download also works when popups are blocked.
+                window.location.assign(data.download_url);
             } catch (error) {
                 alert('Export failed: ' + error.message);
             }

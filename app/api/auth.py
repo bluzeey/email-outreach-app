@@ -41,6 +41,8 @@ async def get_session():
 @router.get("/google/start")
 async def start_google_auth():
     """Start Google OAuth flow - redirects to Google."""
+    if not settings.GMAIL_CONNECTION_ENABLED:
+        raise HTTPException(status_code=503, detail="Gmail connection is disabled until private setup is complete.")
     try:
         auth_url, state = get_authorization_url()
         return RedirectResponse(url=auth_url)
@@ -59,6 +61,8 @@ async def google_auth_callback(
     session: AsyncSession = Depends(get_session),
 ):
     """Handle Google OAuth callback."""
+    if not settings.GMAIL_CONNECTION_ENABLED:
+        raise HTTPException(status_code=503, detail="Gmail connection is disabled until private setup is complete.")
     try:
         # Exchange code for credentials
         credentials = exchange_code_for_credentials(code, state)

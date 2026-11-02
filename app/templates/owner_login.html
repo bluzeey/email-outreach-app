@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - Email Outreach App</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .owner-login { max-width: 480px; margin: 4rem auto; }
+        .owner-login h2 { margin-bottom: 0.75rem; }
+        #google-signin { min-height: 44px; margin: 1.5rem 0; }
+        #login-status { margin-bottom: 0; font-size: 0.95rem; }
+    </style>
+    <script src="/static/owner-login.js" defer></script>
+    <script src="https://accounts.google.com/gsi/client" defer></script>
+</head>
+<body>
+    <header><h1>Email Outreach</h1></header>
+    <div class="container owner-login">
+        <main id="owner-login" data-client-id="{{ client_id }}"
+              data-nonce="{{ login_nonce }}" data-next="{{ next_path }}">
+            <h2>Sign in to your private app</h2>
+            <p>Use the owner's Google account to access Email Outreach.</p>
+            <div id="google-signin"></div>
+            <p id="login-status" role="status" aria-live="polite">Loading Google sign-in…</p>
+            <noscript><p>Enable JavaScript to sign in with Google.</p></noscript>
+        </main>
+    </div>
+</body>
+</html>

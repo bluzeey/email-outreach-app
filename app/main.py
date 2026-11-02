@@ -5,16 +5,18 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 
 from app.api import auth, campaigns, followups, leads, pages, reviews
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
-from app.db.base import AsyncSessionLocal, init_db
+from app.core.owner_access import setup_owner_access
+from app.core.runtime import validate_runtime_configuration
+from app.db.base import AsyncSessionLocal, engine, init_db
 from app.db.models import Campaign, CampaignStatus
 
 # Setup logging
@@ -88,6 +90,7 @@ async def recover_interrupted_campaigns(max_retries=3, retry_delay=1.0):
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
+    validate_runtime_configuration()
     await init_db()
     
     # Ensure upload directory exists
@@ -96,10 +99,10 @@ async def lifespan(app: FastAPI):
     # Recover interrupted campaigns
     await recover_interrupted_campaigns()
     
-    yield
-    
-    # Shutdown
-    pass
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 
 app = FastAPI(
@@ -108,6 +111,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+setup_owner_access(app)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -126,6 +131,17 @@ async def index(request: Request):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/ready")
+async def readiness_check():
+    """Probe the configured database without returning private state."""
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception:  # noqa: BLE001 - every database failure must keep readiness unavailable.
+        return JSONResponse({"status": "unavailable"}, status_code=503)
 
 
 # Include routers - Pages first for HTML routes to take precedence

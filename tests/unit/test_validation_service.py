@@ -105,8 +105,8 @@ class TestValidationService:
         """Test validation flags long body."""
         draft = GeneratedEmail(
             subject="Test",
-            plain_text_body="Word " * 200,  # 400 words
-            html_body="<p>" + ("Word " * 200) + "</p>",
+            plain_text_body="Word " * 400,
+            html_body="<p>" + ("Word " * 400) + "</p>",
         )
         
         report = service.validate_draft(draft, "test@example.com", {})

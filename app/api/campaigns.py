@@ -5,15 +5,25 @@ import json
 import os
 import uuid
 from datetime import datetime
-from typing import List
+from typing import Annotated, List
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.core.config import settings
+from app.core.file_paths import (
+    canonical_uuid,
+    create_private_file,
+    export_basename,
+    open_export,
+    remove_private_upload,
+    upload_destination,
+    upload_extension,
+)
 from app.core.logging import get_logger
 from app.db.base import AsyncSessionLocal
 from app.db.models import (
@@ -122,6 +132,8 @@ async def create_campaign(
     session: AsyncSession = Depends(get_session),
 ):
     """Create a new campaign."""
+    if not request.dry_run and not settings.EMAIL_SENDING_ENABLED:
+        raise HTTPException(status_code=503, detail="Live sending is disabled. Create a dry-run campaign instead.")
     try:
         campaign = Campaign(
             name=request.name,
@@ -153,30 +165,29 @@ async def upload_file(
     1. Initial upload: Campaign has no rows yet (new campaign)
     2. Append upload: Campaign already has rows + inferred schema - adds only new leads
     """
+    dest_path = None
+    upload_saved = False
+    accepted = False
     try:
         # Check campaign exists
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
 
-        # Validate file type
-        if not DataLoader.is_supported_file(file.filename):
-            raise HTTPException(
-                status_code=400,
-                detail="Only CSV and Excel files (.csv, .xls, .xlsx, .xlsm) are allowed"
-            )
-
-        # Get file extension
-        file_ext = DataLoader.get_file_extension(file.filename)
-
-        # Save file
-        file_id = str(uuid.uuid4())
-        dest_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.{file_ext}")
+        # Keep the original display name, but never use it as a storage path.
+        try:
+            dest_path = upload_destination(upload_extension(file.filename))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
         await DataLoader.save_upload(file, dest_path)
+        upload_saved = True
 
         # Load and profile data
-        df = DataLoader.load_file(dest_path)
+        try:
+            df = DataLoader.load_file(dest_path)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid CSV or Excel data") from error
 
         # Check if this is an append operation (campaign has schema + existing rows)
         existing_rows_result = await session.execute(
@@ -188,15 +199,21 @@ async def upload_file(
 
         if existing_rows and has_existing_schema:
             # APPEND MODE: Add only new leads
-            return await _append_leads_to_campaign(
+            response = await _append_leads_to_campaign(
                 campaign, df, dest_path, file.filename, session
             )
+            accepted = True
+            return response
         else:
             # INITIAL MODE: Standard upload for new campaign
             campaign.csv_filename = file.filename
             campaign.csv_storage_path = dest_path
-            campaign.status = CampaignStatus.PROFILING
+            # Saving a file does not start analysis. Reserve PROFILING for a
+            # manually started analysis so restarts do not report false failures.
+            campaign.status = CampaignStatus.CREATED
+            campaign.errors = []
             await session.commit()
+            accepted = True
 
             logger.info(f"Initial upload for campaign {campaign_id}: {len(df)} rows")
 
@@ -219,6 +236,12 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Failed to upload file: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+    finally:
+        if upload_saved and not accepted:
+            try:
+                remove_private_upload(dest_path)
+            except (OSError, ValueError) as error:
+                logger.warning("Failed to clean rejected upload", error=str(error))
 
 
 async def _append_leads_to_campaign(
@@ -467,6 +490,9 @@ async def _run_analysis(
             await session.commit()
             existing_rows = []
         
+        campaign.status = CampaignStatus.PROFILING
+        await session.commit()
+
         # Start progress tracking
         if existing_rows:
             await progress_manager.update(
@@ -822,6 +848,9 @@ async def run_campaign(
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
 
+        if not campaign.dry_run and not settings.EMAIL_SENDING_ENABLED:
+            raise HTTPException(status_code=503, detail="Live sending is disabled. Use dry-run mode.")
+
         # Allow running from CREATED, PAUSED, RUNNING, or COMPLETED (for newly added leads)
         if campaign.status not in [CampaignStatus.CREATED, CampaignStatus.PAUSED, CampaignStatus.RUNNING, CampaignStatus.COMPLETED]:
             raise HTTPException(status_code=400, detail=f"Campaign cannot be run in status: {campaign.status.value}")
@@ -1129,6 +1158,9 @@ async def toggle_dry_run(
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
+
+        if campaign.dry_run and not settings.EMAIL_SENDING_ENABLED:
+            raise HTTPException(status_code=503, detail="Live sending is disabled for this installation.")
         
         # Toggle the dry_run flag
         campaign.dry_run = not campaign.dry_run
@@ -1176,10 +1208,10 @@ async def _process_recipient_row(session: AsyncSession, campaign: Campaign, row:
 
 async def _send_recipient_email(session: AsyncSession, campaign: Campaign, row: CampaignRow):
     """Send email for a recipient using existing draft."""
+    from app.core.security import mask_sensitive_data, parse_gmail_credentials, validate_gmail_token
     from app.db.models import EmailDraft, GmailAccount, SendEvent, SendStatus
     from app.services.gmail_client import GmailClient
     from app.services.idempotency_service import IdempotencyService
-    from app.core.security import parse_gmail_credentials, validate_gmail_token, mask_sensitive_data
     
     logger.info(f"[API_SEND] Starting send for row {row.id}, email: {mask_sensitive_data(row.recipient_email or '', 3)}")
 
@@ -1569,6 +1601,7 @@ async def get_recipient_draft(
         
         # Get the draft
         from sqlalchemy import select
+
         from app.db.models import EmailDraft
         
         result = await session.execute(
@@ -1622,6 +1655,7 @@ async def update_recipient_draft(
 
         # Get the draft (latest wins - order by created_at desc, id desc)
         from sqlalchemy import select
+
         from app.db.models import EmailDraft
 
         result = await session.execute(
@@ -1697,9 +1731,9 @@ async def regenerate_recipient_draft(
             raise HTTPException(status_code=404, detail="Recipient not found")
 
         # Get schema and plan
-        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
-        from app.services.draft_generation_service import DraftGenerationService
         from app.db.models import EmailDraft, GmailAccount
+        from app.schemas.csv_inference import CampaignPlan, CsvSchemaInference
+        from app.services.draft_generation_service import DraftGenerationService
 
         if not campaign.inferred_schema_json or not campaign.campaign_plan_json:
             raise HTTPException(status_code=400, detail="Campaign schema or plan not available")
@@ -1799,61 +1833,93 @@ async def export_campaign(
     format: str = Query("csv", pattern="^(csv|json)$"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Export campaign results."""
+    """Generate a private export bound to this campaign and an opaque UUID."""
     try:
+        try:
+            canonical_uuid(campaign_id)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail="Campaign not found") from error
         campaign = await session.get(Campaign, campaign_id)
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        
-        # Get all rows
+        if format not in {"csv", "json"}:
+            raise HTTPException(status_code=400, detail="Unsupported export format")
+
         result = await session.execute(
             select(CampaignRow).where(CampaignRow.campaign_id == campaign_id)
         )
         rows = result.scalars().all()
-        
-        # Create export file
-        export_id = str(uuid.uuid4())
-        export_path = os.path.join(settings.UPLOAD_DIR, f"export_{export_id}.{format}")
-        
-        if format == "csv":
-            # Build CSV data
-            data = []
-            for row in rows:
-                data.append({
+        token = f"{uuid.uuid4()}.{format}"
+        with create_private_file(export_basename(campaign_id, token)) as output:
+            if format == "csv":
+                data = [{
                     "row_number": row.row_number,
                     "recipient_email": row.recipient_email,
                     "status": row.status.value,
                     **(row.raw_row_json or {}),
-                })
-            
-            df = pd.DataFrame(data)
-            df.to_csv(export_path, index=False)
-        else:
-            # JSON format
-            import json
-            data = []
-            for row in rows:
-                data.append({
+                } for row in rows]
+                # Even an empty campaign produces a valid, useful CSV header.
+                columns = ["row_number", "recipient_email", "status"]
+                columns.extend(dict.fromkeys(key for row in data for key in row if key not in columns))
+                pd.DataFrame(data, columns=columns).to_csv(output, index=False)
+            else:
+                json.dump([{
                     "row_number": row.row_number,
                     "recipient_email": row.recipient_email,
                     "status": row.status.value,
                     "raw_data": row.raw_row_json,
                     "errors": row.errors,
-                })
-            
-            with open(export_path, "w") as f:
-                json.dump(data, f, indent=2)
-        
+                } for row in rows], output)
+
         return CampaignExportResponse(
             campaign_id=campaign_id,
-            download_url=f"/campaigns/{campaign_id}/export/download?file={export_id}.{format}",
+            download_url=f"/api/campaigns/{campaign_id}/export/download?file={token}",
             format=format,
             row_count=len(rows),
         )
-        
-    except Exception as e:
-        logger.error(f"Failed to export campaign: {e}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.error("Failed to export campaign", error=str(error))
+        raise HTTPException(status_code=500, detail="Failed to export campaign") from error
+
+
+@router.get("/{campaign_id}/export/download")
+async def download_campaign_export(
+    campaign_id: str,
+    file: Annotated[str, Query()],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    """Stream only a generated regular export belonging to this campaign."""
+    try:
+        name = export_basename(campaign_id, file)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Export not found") from error
+    if not await session.get(Campaign, campaign_id):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    try:
+        output = open_export(name)
+    except (OSError, ValueError) as error:
+        raise HTTPException(status_code=404, detail="Export not found") from error
+
+    def chunks():
+        try:
+            while chunk := output.read(64 * 1024):
+                yield chunk
+        finally:
+            output.close()
+
+    extension = file.rsplit(".", 1)[1]
+    return StreamingResponse(
+        chunks(),
+        media_type="text/csv" if extension == "csv" else "application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="campaign-{campaign_id}.{extension}"',
+            "Cache-Control": "no-store, private",
+            "X-Content-Type-Options": "nosniff",
+        },
+        background=BackgroundTask(output.close),
+    )
 
 
 @router.get("/{campaign_id}/progress", response_model=CampaignProgressResponse)
@@ -2034,10 +2100,10 @@ async def regenerate_campaign_drafts(
             raise HTTPException(status_code=400, detail="CSV file not found")
         
         # Import required services
-        from app.schemas.csv_inference import CsvSchemaInference, CampaignPlan
-        from app.services.draft_generation_service import DraftGenerationService
-        from app.services.csv_profiler import CSVProfiler
+        from app.schemas.csv_inference import CampaignPlan, CsvSchemaInference
         from app.services.csv_loader import DataLoader
+        from app.services.csv_profiler import CSVProfiler
+        from app.services.draft_generation_service import DraftGenerationService
         
         # Load schema and plan
         schema = CsvSchemaInference(**campaign.inferred_schema_json)

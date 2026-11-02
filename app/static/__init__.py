@@ -1,1 +1,1 @@
-""", 
+"""Static assets package."""

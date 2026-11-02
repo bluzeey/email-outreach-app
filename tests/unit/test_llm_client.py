@@ -1,7 +1,7 @@
 """Tests for unified LLM client."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.config import Settings
 from app.services.llm_client import UnifiedLLMClient
@@ -97,14 +97,14 @@ class TestUnifiedLLMClient:
             mock_fallback = MagicMock()
             
             # Primary fails, fallback succeeds
-            mock_primary.ainvoke.side_effect = Exception("Fireworks rate limit")
-            mock_fallback.ainvoke.return_value = MagicMock(content="Fallback response")
+            mock_primary.ainvoke = AsyncMock(side_effect=Exception("Fireworks rate limit"))
+            mock_fallback.ainvoke = AsyncMock(return_value=MagicMock(content="Fallback response"))
             
             mock_chat.side_effect = [mock_primary, mock_fallback]
             
             client = UnifiedLLMClient(temperature=0.7)
             
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
             messages = [HumanMessage(content="Test prompt")]
             
             response = await client.ainvoke(messages)

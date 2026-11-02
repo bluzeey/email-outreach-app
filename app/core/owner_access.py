@@ -7,6 +7,7 @@ There is no account registration or persistent Google token storage here.
 
 import hashlib
 import json
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ PUBLIC_ASSETS = frozenset({"/static/style.css", "/static/owner-login.js"})
 LOGIN_PATHS = frozenset({"/login", "/login/google", "/session", "/logout"})
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 GOOGLE_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
+logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 
 
@@ -209,6 +211,53 @@ def _valid_login_nonce(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 43 and value.isascii()
 
 
+def _claims_rejection(claims: Any, access: OwnerAccess, nonce: str, now: int) -> str | None:
+    """Return fixed diagnostic labels, never token contents or account details."""
+    if not isinstance(claims, dict):
+        return "claims_type"
+    if claims.get("iss") not in GOOGLE_ISSUERS:
+        return "issuer"
+    if claims.get("aud") != access.client_id:
+        return "audience"
+    if claims.get("azp", access.client_id) != access.client_id:
+        return "presenter"
+    # Google's signed OIDC claims document both JSON true and the string "true".
+    # An integer 1 or any other truthy value is still rejected.
+    verified = claims.get("email_verified")
+    if verified is not True and not (type(verified) is str and verified == "true"):
+        return "email_unverified"
+    if not isinstance(claims.get("email"), str) or not _valid_subject(claims.get("sub")):
+        return "identity_fields"
+    if type(claims.get("iat")) is not int or type(claims.get("exp")) is not int:
+        return "timestamp_type"
+    if claims["iat"] > now:
+        return "issued_in_future"
+    if claims["exp"] <= now:
+        return "expired"
+    if not _valid_login_nonce(claims.get("nonce")):
+        return "nonce_missing_or_invalid"
+    if not secrets.compare_digest(claims["nonce"], nonce):
+        return "nonce_mismatch"
+    return None
+
+
+def _google_rejection(error: Exception) -> str:
+    """Classify library failures without logging their data-bearing messages."""
+    message = str(error)
+    for prefix, reason in (
+        ("Token used too early", "issued_in_future"),
+        ("Token expired", "expired"),
+        ("Wrong recipient", "audience"),
+        ("Token has wrong audience", "audience"),
+        ("Wrong issuer", "issuer"),
+        ("Certificate for key id", "signing_key"),
+        ("Could not verify token signature", "signature"),
+    ):
+        if message.startswith(prefix):
+            return reason
+    return "google_token_validation"
+
+
 class OwnerAccessMiddleware:
     """Default-deny every route and mount, including future routes and sockets."""
 
@@ -361,26 +410,17 @@ def setup_owner_access(app: FastAPI, settings: Any = None) -> OwnerAccess | None
             return JSONResponse({"detail": "Reload the login page and try again"}, 401)
         try:
             claims = await run_in_threadpool(_verify_google, data["credential"], access.client_id)
-        except (ValueError, GoogleAuthError):
+        except (ValueError, GoogleAuthError) as error:
+            logger.warning("Owner sign-in rejected: %s", _google_rejection(error))
             return JSONResponse({"detail": "Google sign-in could not be verified"}, 401)
         except requests.RequestException:
+            logger.warning("Owner sign-in rejected: certificate_transport")
             return JSONResponse({"detail": "Google sign-in is temporarily unavailable"}, 503)
 
         now = int(time.time())
-        if (
-            not isinstance(claims, dict)
-            or claims.get("iss") not in GOOGLE_ISSUERS
-            or claims.get("aud") != access.client_id
-            or claims.get("azp", access.client_id) != access.client_id
-            or claims.get("email_verified") is not True
-            or not isinstance(claims.get("email"), str)
-            or not _valid_subject(claims.get("sub"))
-            or type(claims.get("iat")) is not int
-            or type(claims.get("exp")) is not int
-            or not claims["iat"] <= now < claims["exp"]
-            or not _valid_login_nonce(claims.get("nonce"))
-            or not secrets.compare_digest(claims["nonce"], challenge["nonce"])
-        ):
+        rejection = _claims_rejection(claims, access, challenge["nonce"], now)
+        if rejection:
+            logger.warning("Owner sign-in rejected: %s", rejection)
             return JSONResponse({"detail": "Google sign-in could not be verified"}, 401)
         if claims["email"].casefold() != access.owner_email:
             return JSONResponse({"detail": "This account cannot access this private app"}, 403)

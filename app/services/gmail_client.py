@@ -12,6 +12,7 @@ from googleapiclient.errors import HttpError
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.provider_guards import require_email_sending, require_gmail_access
 
 logger = get_logger(__name__)
 
@@ -44,6 +45,7 @@ def get_client_config() -> dict:
 
 def create_auth_flow() -> Flow:
     """Create OAuth flow for Gmail authentication."""
+    require_gmail_access()
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise ValueError(
             "Google OAuth credentials not configured. "
@@ -76,6 +78,7 @@ def get_authorization_url() -> tuple[str, str]:
 
 def exchange_code_for_credentials(code: str, state: str) -> dict:
     """Exchange authorization code for credentials."""
+    require_gmail_access()
     # Retrieve the flow instance from storage
     flow = _oauth_flows.pop(state, None)
     if not flow:
@@ -124,6 +127,7 @@ def dict_to_credentials(cred_dict: dict) -> Credentials:
 
 def refresh_credentials_if_needed(credentials: Credentials) -> Credentials:
     """Refresh credentials if expired."""
+    require_gmail_access()
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
         logger.info("Refreshed expired OAuth token")
@@ -132,6 +136,7 @@ def refresh_credentials_if_needed(credentials: Credentials) -> Credentials:
 
 def build_gmail_service(credentials: Credentials):
     """Build Gmail API service."""
+    require_gmail_access()
     return build("gmail", "v1", credentials=credentials, cache_discovery=False)
 
 
@@ -193,6 +198,7 @@ class GmailClient:
 
     def _get_service(self):
         """Get or create Gmail service."""
+        require_gmail_access()
         if self.service is None:
             self.credentials = refresh_credentials_if_needed(self.credentials)
             self.service = build_gmail_service(self.credentials)
@@ -221,6 +227,7 @@ class GmailClient:
             in_reply_to: Message ID for In-Reply-To header
             references: Message IDs for References header
         """
+        require_email_sending()
         try:
             service = self._get_service()
 

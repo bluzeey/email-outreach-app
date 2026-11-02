@@ -139,7 +139,7 @@ class ValidationService:
             return None
         
         import json
-        from langchain.schema import HumanMessage
+        from langchain_core.messages import HumanMessage
         
         prompt = f"""You are an expert email copy reviewer. Analyze this email draft for quality and potential issues.
 

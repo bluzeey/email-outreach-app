@@ -1,270 +1,132 @@
 # Email Outreach Application
 
-An internal single-user email outreach application built with FastAPI + LangGraph.
+Private, single-owner outreach app built with FastAPI, LangGraph and SQLite. Upload contacts, analyze campaigns, review generated drafts, and export results. AI analysis and drafting use the configured LLM provider.
 
-## Features
+**Migration mode: no real email sending.** Keep `GMAIL_CONNECTION_ENABLED=false`, `EMAIL_SENDING_ENABLED=false`, and `DRY_RUN_DEFAULT=true`. Do not connect live Gmail accounts or perform live send tests during migration.
 
-- **Gmail OAuth Integration**: Connect one Gmail account for sending
-- **CSV Upload & Profiling**: Upload leads/contacts and automatically infer schema
-- **AI-Powered Personalization**: Generate personalized emails per recipient
-- **Campaign Management**: Plan, approve, and execute email campaigns
-- **Human-in-the-Loop**: Campaign-level and row-level approval workflows
-- **Dry-Run Mode**: Preview emails before sending (default mode)
-- **Idempotency**: Prevent duplicate sends
-- **Audit Logging**: Complete trail of all actions
-- **Resumable Workflows**: Pause/resume campaigns with LangGraph persistence
+## Local setup
 
-## Tech Stack
-
-- Python 3.11+
-- FastAPI (web framework)
-- LangGraph (workflow orchestration)
-- Pydantic v2 (data validation)
-- SQLAlchemy + Alembic (database)
-- SQLite (auto-created locally)
-- pandas (CSV handling)
-- Google API Client (Gmail integration)
-- Fireworks AI / OpenAI (LLM providers)
-
-## Quick Start
-
-### 1. Clone & Install
+Requires Python 3.11+. From the repository directory:
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd email-outreach-app
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
+python -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
-```
-
-### 2. Get Your API Keys
-
-You need **3 API keys** to run this app:
-
-| Key | Where to Get | Cost |
-|-----|-------------|------|
-| **FIREWORKS_API_KEY** | [fireworks.ai](https://fireworks.ai) | Free tier available |
-| **GOOGLE_CLIENT_ID** | [Google Cloud Console](https://console.cloud.google.com/) | Free |
-| **GOOGLE_CLIENT_SECRET** | [Google Cloud Console](https://console.cloud.google.com/) | Free |
-
-**Optional**: `OPENAI_API_KEY` - only if you want OpenAI as a fallback
-
-### 3. Setup Gmail OAuth (5 minutes)
-
-**Video Guides** (watch either one):
-- [How to Create Google OAuth Credentials](https://www.youtube.com/watch?v=StamvXkNly4) - General OAuth setup
-- [Search YouTube: "Gmail API OAuth setup web application scopes"](https://www.youtube.com/results?search_query=gmail+api+oauth+setup+web+application+scopes) - Detailed walkthrough with scopes
-
-Or follow these detailed steps:
-
-#### Step 1: Create a Project & Enable Gmail API
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (click the project dropdown → "New Project", name it "Email Outreach")
-3. Once created, make sure your new project is selected
-4. Go to **"APIs & Services"** → **"Library"** in the left sidebar
-5. Search for **"Gmail API"** → Click on it → Click **"Enable"**
-
-#### Step 2: Configure OAuth Consent Screen & Add Scopes
-1. Go to **"APIs & Services"** → **"OAuth consent screen"**
-2. Select **"External"** as User Type → Click **"Create"**
-3. Fill in the app information:
-   - App name: **"Email Outreach"**
-   - User support email: **your email**
-   - Developer contact information: **your email**
-   - Click **"Save and Continue"**
-4. **IMPORTANT - Add ALL Required Scopes**:
-   - Click **"Add or Remove Scopes"**
-   - Search for and check these 3 scopes:
-     - `https://www.googleapis.com/auth/gmail.send` - Send emails
-     - `openid` - Get user identity
-     - `https://www.googleapis.com/auth/userinfo.email` - Get user email
-   - Click **"Update"**
-   - Click **"Save and Continue"**
-5. Skip the "Test users" step for now (you can add yourself later if needed)
-6. Click **"Back to Dashboard"**
-
-#### Step 3: Create OAuth Credentials
-1. Go to **"APIs & Services"** → **"Credentials"**
-2. Click **"Create Credentials"** → Select **"OAuth client ID"**
-3. Configure the OAuth client:
-   - Application type: **"Web application"**
-   - Name: **"Email Outreach Web"**
-   - **Authorized JavaScript origins**: Click **"Add URI"** → Enter `http://localhost:8000`
-   - **Authorized redirect URIs**: Click **"Add URI"** → Enter `http://localhost:8000/auth/google/callback`
-   - Click **"Create"**
-4. A popup will show your **Client ID** and **Client Secret**
-   - Click the copy icon for each and save them for the next step
-   - ⚠️ **Note**: You can always retrieve these later from the Credentials page
-
-> **Important**: If you run the app on a different port (e.g., `8001`), update the origins and redirect URIs accordingly (use `http://localhost:8001` instead).
-
-### 4. Configure Environment
-
-```bash
-# Copy example file
 cp .env.example .env
-
-# Edit .env with your keys
-nano .env  # or use your favorite editor
+chmod 600 .env
 ```
 
-Your `.env` file should look like this:
+Edit `.env` before starting. Set the owner identity and session secret described below. Leave provider credentials blank unless needed for authorized provider use; startup and offline tests do not require LLM or Gmail credentials.
 
 ```bash
-# LLM API (get from fireworks.ai)
-FIREWORKS_API_KEY=fw-your-fireworks-key-here
-
-# Optional: OpenAI fallback
-OPENAI_API_KEY=sk-your-openai-key-here
-
-# Gmail OAuth (from Google Cloud Console)
-GOOGLE_CLIENT_ID=123456789-abc123.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-your-secret-here
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Note**: 
-- Databases (`outreach.db`, `checkpoints.db`) are **auto-created** when you first run the app
-- OAuth encryption keys are auto-generated per session
-- Uploads folder is created automatically
+Open `http://127.0.0.1:8000`, sign in as the configured owner, and keep campaigns in dry-run mode. Use synthetic contacts for migration checks. `/docs`, `/redoc`, and private APIs require the owner session. `/health` and `/ready` expose generic status; `/ready` also checks database connectivity.
 
-### 5. Run the Application
+## Owner sign-in and optional Gmail authorization
+
+These are independent authentication flows:
+
+| Purpose | Configuration | Behavior |
+| --- | --- | --- |
+| Private app access | `APP_GOOGLE_CLIENT_ID`, `APP_OWNER_EMAIL`, `APP_SESSION_SECRET`, `APP_BASE_URL`; keep `APP_LOGIN_REQUIRED=true` | Google Identity Services supplies a basic identity ID token. The server verifies it and accepts only the verified owner email, then issues an eight-hour signed, HttpOnly session cookie. No Gmail permission or persistent Google token storage is involved in owner sign-in. |
+| Optional Gmail connection | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Separate OAuth authorization for mailbox access and sending. Disabled by `GMAIL_CONNECTION_ENABLED=false` during migration. |
+
+For owner sign-in, configure a Google **web application** client with an authorized JavaScript origin exactly matching `APP_BASE_URL` (locally `http://127.0.0.1:8000`). Set that client ID explicitly in `APP_GOOGLE_CLIENT_ID`; the app does not fall back to `GOOGLE_CLIENT_ID`. Owner sign-in posts the ID token to `/login/google` and does not use the Gmail callback or require a Google client secret. Set `APP_OWNER_EMAIL` to the single owner's Google email.
+
+`APP_BASE_URL` must be an origin without a path, query, or fragment. Use HTTPS in deployment; HTTP is accepted only on loopback. Missing or invalid owner configuration prevents app initialization. Disabling owner login is rejected in production.
+
+For a later, separately authorized Gmail setup, enable the Gmail API for its Google project, configure the consent screen, and register the exact `GOOGLE_REDIRECT_URI` (for example, `https://outreach.example.com/auth/google/callback`). The current connection flow requests all four scopes:
+
+- `https://www.googleapis.com/auth/gmail.send`
+- `https://www.googleapis.com/auth/gmail.modify`
+- `openid`
+- `https://www.googleapis.com/auth/userinfo.email`
+
+`gmail.modify` grants mailbox read/modify access; these permissions are broader than sending alone. Existing grants may require renewed consent for the current scopes. Configuring credentials or signing in as owner does not enable Gmail access or delivery. Keep both server flags false throughout migration.
+
+## Secrets and server locks
+
+For a new installation only, generate secrets once in a private terminal and store them in the private environment file or deployment secret store. For migration, reuse the existing secrets:
 
 ```bash
-# Start the server
-python -m app.main
+# APP_SESSION_SECRET: a random signing secret, at least 32 characters
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 
-# Or with uvicorn
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# ENCRYPTION_KEY: a valid Fernet key for stored Gmail credentials
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Open http://localhost:8000 in your browser.
+Preserve existing secrets when migrating. `ENCRYPTION_KEY` is supplied by the operator, never generated per session. Production requires a valid key even while Gmail is disabled. Gmail access/refresh tokens are encrypted in SQLite with this key; replacing or losing it makes existing credentials unreadable. Keep the matching key backed up securely alongside the database backup plan, outside source control. Do not regenerate it on restart or redeploy.
 
-## How to Use
+Keep `APP_SESSION_SECRET` stable across restarts; changing it invalidates owner sessions. Treat it separately from `ENCRYPTION_KEY`. Never commit `.env` files, provider secrets, tokens, or real keys into the example file or image.
 
-1. **Connect Gmail**: Click "Connect Gmail" and authenticate
-2. **Create Campaign**: Click "New Campaign", give it a name
-3. **Upload CSV**: Upload your leads file (see sample format below)
-4. **Review & Analyze**: The app detects email columns and generates a campaign plan
-5. **Preview**: Review sample emails generated by AI
-6. **Approve**: Click "Approve Campaign" to start processing
-7. **Monitor**: Watch progress in real-time
-8. **Export**: Download results when done
+| Setting | Current behavior |
+| --- | --- |
+| `GMAIL_CONNECTION_ENABLED=false` | Blocks Gmail authorization, credential exchange, refresh, and Gmail service access. |
+| `EMAIL_SENDING_ENABLED=false` | Blocks real campaign and follow-up delivery at server entry points and the sending service/client. |
+| `DRY_RUN_DEFAULT=true` | Sets the sending service's default to simulated delivery. Campaign/follow-up request defaults are also true. Campaign toggles or request fields cannot override the server locks. |
 
-### Sample CSV Format
+Dry-run delivery does not send Gmail messages, but AI analysis/drafting can still call a configured LLM provider. Leave `FIREWORKS_API_KEY` and `OPENAI_API_KEY` blank for provider-free checks. With `LLM_PROVIDER=fireworks`, OpenAI fallback is available only when `OPENAI_API_KEY` is configured; `LLM_PROVIDER=openai` uses OpenAI directly. Model settings and other defaults are listed in `.env.example`.
 
-```csv
-first_name,last_name,email,company,title
-John,Doe,john@example.com,Acme Inc,CEO
-Jane,Smith,jane@example.com,TechCorp,CTO
+## Production container and persistent data
+
+The Dockerfile runs as **UID/GID 10001:10001**, uses one worker, and defaults to `APP_ENV=production` with `/data` paths and both provider locks false. Keep one worker: Gmail OAuth flow state and campaign task coordination include in-memory state.
+
+Create a private `.env.production` from `.env.example`, set the owner configuration and stable secrets above, and apply these overrides. The example's local paths override Docker image defaults if passed unchanged.
+
+```dotenv
+APP_ENV=production
+APP_LOGIN_REQUIRED=true
+APP_BASE_URL=https://outreach.example.com
+DATA_DIR=/data
+DATABASE_URL=sqlite:////data/outreach.db
+CHECKPOINT_DATABASE_URL=sqlite:////data/checkpoints.db
+UPLOAD_DIR=/data/uploads
+GMAIL_CONNECTION_ENABLED=false
+EMAIL_SENDING_ENABLED=false
+DRY_RUN_DEFAULT=true
 ```
 
-See `tests/fixtures/sample_leads.csv` for a complete example.
-
-## Configuration Reference
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `FIREWORKS_API_KEY` | Fireworks AI API key | **Yes** |
-| `OPENAI_API_KEY` | OpenAI API key (fallback) | No |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID | **Yes** |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | **Yes** |
-| `DRY_RUN_DEFAULT` | Start in dry-run mode | No (default: true) |
-| `LOG_LEVEL` | Logging verbosity | No (default: INFO) |
-
-### LLM Provider Options
-
-**Option 1: Fireworks AI with Kimi K2.5 Turbo (Default)**
-```bash
-FIREWORKS_API_KEY=your_key_here
-OPENAI_API_KEY=your_openai_key_here  # Optional fallback
-```
-
-**Option 2: OpenAI Only**
-```bash
-LLM_PROVIDER=openai
-OPENAI_API_KEY=your_key_here
-```
-
-When Fireworks fails (rate limits, etc.), the app automatically falls back to OpenAI.
-
-## Project Structure
-
-```
-email-outreach-app/
-├── app/
-│   ├── api/              # API endpoints (auth, campaigns, reviews)
-│   ├── core/             # Config, logging, security
-│   ├── db/               # Database models
-│   ├── graphs/           # LangGraph workflows
-│   ├── schemas/          # Pydantic models
-│   ├── services/         # Business logic
-│   ├── templates/        # HTML templates
-│   └── static/           # CSS styles
-├── tests/                # Unit & integration tests
-├── uploads/              # Auto-created: CSV uploads
-├── outreach.db           # Auto-created: Main database
-└── checkpoints.db        # Auto-created: LangGraph state
-```
-
-## API Documentation
-
-Once running, access:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## Testing
+Use the actual public origin in `APP_BASE_URL` and the owner's Google client settings. On the deployment host, prepare durable storage writable by the container user. Example deployment commands for an authorized deployment:
 
 ```bash
-# Run all tests
+chmod 600 .env.production
+sudo install -d -o 10001 -g 10001 -m 0700 /srv/email-outreach/data
+sudo install -d -o 10001 -g 10001 -m 0700 /srv/email-outreach/data/uploads
+docker build -t email-outreach:local .
+docker run -d --name email-outreach --restart unless-stopped \
+  --env-file .env.production \
+  --mount type=bind,src=/srv/email-outreach/data,dst=/data \
+  -p 127.0.0.1:8000:8000 email-outreach:local
+```
+
+Place an HTTPS reverse proxy in front of the loopback port. Persist and back up `/data`, and preserve the matching encryption key in secure secret storage. The image creates `/data` directories but does not provision a durable host volume; the mount is an operator responsibility.
+
+In production, startup requires an existing absolute `DATA_DIR`, owner login, a valid encryption key, and absolute SQLite database/checkpoint and upload paths contained inside `DATA_DIR`. The deployment validator rejects other database backends, in-memory SQLite, and paths escaping that directory. The mount must also allow UID 10001 to create/update files. Local development instead defaults to `./outreach.db` and `./uploads`; startup creates the main database tables and upload directory.
+
+## Persistence limits
+
+Campaigns, recipients, drafts, and send events are stored in the main SQLite database. Both LangGraph workflows currently compile **without a checkpointer**. `CHECKPOINT_DATABASE_URL` is configured and validated, but does not wire up durable graph state or automatically create a working checkpoint database. Existing pause/rerun paths use application database records; interrupted background work is not guaranteed to resume from its exact graph step after a restart.
+
+## Offline verification
+
+```bash
 pytest
-
-# Run with coverage
-pytest --cov=app
-
-# Run specific test
-pytest tests/unit/test_csv_loader.py -v
+git diff --check -- README.md .env.example
 ```
+
+The test configuration uses disposable local storage, synthetic owner settings, disabled Gmail/sending flags, and a network-blocking fixture. It does not validate a real Google login, mailbox connection, delivery, or deployment. Do not use live accounts for migration verification.
 
 ## Troubleshooting
 
-### "No LLM client available"
-- Check your `FIREWORKS_API_KEY` is set correctly
-- Verify the API key is active in your Fireworks dashboard
-
-### "Failed to authenticate with Google"
-- Ensure you've enabled **Gmail API** in Google Cloud Console
-- Make sure you selected **"Web application"** as the application type
-- Verify your **Authorized JavaScript origins** includes `http://localhost:8000`
-- Verify your **Authorized redirect URIs** includes `http://localhost:8000/auth/google/callback`
-- Check that `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are correctly set in your `.env` file
-
-### "Database locked" errors
-- SQLite doesn't support concurrent writes well
-- Stop the app and restart if you see this
-
-## Gmail Permissions
-
-This app uses **minimal** Gmail scopes:
-- `https://www.googleapis.com/auth/gmail.send` - Send emails only
-- `openid` - Authenticate your identity
-- `https://www.googleapis.com/auth/userinfo.email` - Get your email address
-
-**We do NOT access**:
-- ❌ Your inbox (reading emails)
-- ❌ Your contacts
-- ❌ Your sent folder
-- ❌ Drafts
+- **Owner configuration error or rejected login:** verify the explicit `APP_GOOGLE_CLIENT_ID`, exact verified owner email, matching JavaScript origin and `APP_BASE_URL`, and a session secret of at least 32 characters.
+- **Production startup failure:** check the stable Fernet key, persistent mount, absolute `/data` paths, and UID/GID 10001 write permissions. Keep `APP_LOGIN_REQUIRED=true`.
+- **Gmail/sending unavailable:** expected while either server lock is false. Keep migration checks in dry-run mode.
+- **No LLM client available:** provider credentials are needed for AI analysis/drafting, not startup or offline tests.
+- **Stored credentials cannot be decrypted:** restore the encryption key that belongs to the migrated database; generating another key cannot decrypt old tokens.
 
 ## License
 
 MIT License
-
----
-
-**Questions?** Open an issue on GitHub or check the API docs at `/docs` when running locally.

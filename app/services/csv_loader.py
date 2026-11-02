@@ -110,7 +110,7 @@ class DataLoader:
             df.columns = new_columns
         
         # Convert all values to string for consistency
-        df = df.astype(str)
+        df = df.astype(str).fillna("")
         df = df.replace("nan", "")
         df = df.replace("None", "")
         
@@ -118,16 +118,34 @@ class DataLoader:
     
     @classmethod
     async def save_upload(cls, upload_file: UploadFile, dest_path: str) -> str:
-        """Save uploaded file to disk."""
-        import aiofiles
-        
-        async with aiofiles.open(dest_path, "wb") as f:
-            content = await upload_file.read()
-            await f.write(content)
-        
+        """Stream a bounded upload into an exclusively created private file."""
+        from fastapi import HTTPException
+
+        from app.core.config import settings
+        from app.core.file_paths import create_private_file, upload_basename, upload_extension
+
+        try:
+            upload_extension(upload_file.filename)
+            name = upload_basename(dest_path)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        limit = settings.MAX_UPLOAD_SIZE
+        if limit < 1:
+            raise HTTPException(status_code=500, detail="Upload size limit is unavailable")
+        try:
+            with create_private_file(name, binary=True) as output:
+                total = 0
+                while chunk := await upload_file.read(min(64 * 1024, limit - total + 1)):
+                    total += len(chunk)
+                    if total > limit:
+                        raise HTTPException(status_code=413, detail="Upload exceeds the size limit")
+                    output.write(chunk)
+        except FileExistsError as error:
+            raise HTTPException(status_code=409, detail="Upload destination already exists") from error
+
         logger.info(f"Saved upload to: {dest_path}")
         return dest_path
-    
+
     @classmethod
     def get_row_as_dict(cls, df: pd.DataFrame, row_index: int) -> dict:
         """Get a single row as dictionary."""

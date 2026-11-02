@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import mask_sensitive_data
 from app.db.base import AsyncSessionLocal
@@ -321,6 +322,8 @@ async def send_followup(
     session: AsyncSession = Depends(get_session),
 ):
     """Send a followup email."""
+    if not request.dry_run and not settings.EMAIL_SENDING_ENABLED:
+        raise HTTPException(status_code=503, detail="Live email sending is disabled. Use a dry-run preview.")
     draft = await session.get(FollowupDraft, request.draft_id)
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -489,6 +492,8 @@ async def bulk_send_followups(
     session: AsyncSession = Depends(get_session),
 ):
     """Send multiple followups in bulk."""
+    if not request.dry_run and not settings.EMAIL_SENDING_ENABLED:
+        raise HTTPException(status_code=503, detail="Live email sending is disabled. Use a dry-run preview.")
     results = []
     sent_count = 0
     failed_count = 0

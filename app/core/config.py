@@ -40,7 +40,19 @@ class Settings(BaseSettings):
     
     # Application
     DRY_RUN_DEFAULT: bool = True
+    # A campaign's dry-run toggle cannot override these server-side locks.
+    EMAIL_SENDING_ENABLED: bool = False
+    GMAIL_CONNECTION_ENABLED: bool = False
     LOG_LEVEL: str = "INFO"
+
+    # This app stores one owner's campaigns and Gmail account in a shared DB.
+    APP_LOGIN_REQUIRED: bool = True
+    APP_OWNER_EMAIL: str = "sahil@granveo.com"
+    APP_SESSION_SECRET: str = ""
+    APP_GOOGLE_CLIENT_ID: str = ""
+    APP_BASE_URL: str = "http://127.0.0.1:8000"
+    APP_ENV: str = "development"
+    DATA_DIR: str = "/data"
     
     # File Storage
     UPLOAD_DIR: str = "./uploads"

@@ -40,7 +40,7 @@ class TestCSVLoader:
             temp_path = f.name
         
         try:
-            df = CSVLoader.load_csv(temp_path)
+            df = CSVLoader.load_file(temp_path)
             
             assert len(df) == 2
             assert list(df.columns) == ["name", "email"]
@@ -58,7 +58,7 @@ class TestCSVLoader:
             temp_path = f.name
         
         try:
-            df = CSVLoader.load_csv(temp_path)
+            df = CSVLoader.load_file(temp_path)
             
             # Empty values should be empty strings, not "nan"
             assert df.iloc[0]["phone"] == ""
@@ -74,7 +74,7 @@ class TestCSVLoader:
             temp_path = f.name
         
         try:
-            df = CSVLoader.load_csv(temp_path)
+            df = CSVLoader.load_file(temp_path)
             row = CSVLoader.get_row_as_dict(df, 0)
             
             assert row == {

@@ -3,10 +3,15 @@
 from datetime import datetime
 from typing import Any
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.provider_guards import (
+    EmailSendingDisabled,
+    GmailAccessDisabled,
+    require_email_sending,
+)
 from app.core.security import generate_idempotency_key, mask_sensitive_data
 from app.db.models import CampaignRow, EmailDraft, RowStatus, SendEvent, SendStatus
 from app.services.gmail_client import GmailClient
@@ -21,6 +26,7 @@ class SendService:
         self.dry_run = settings.DRY_RUN_DEFAULT
     
     @retry(
+        retry=retry_if_not_exception_type((EmailSendingDisabled, GmailAccessDisabled)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
     )
@@ -63,6 +69,7 @@ class SendService:
             }
         
         # Actually send via Gmail
+        require_email_sending()
         try:
             result = gmail_client.send_email(
                 sender=sender_email,

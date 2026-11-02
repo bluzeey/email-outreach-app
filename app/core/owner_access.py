@@ -249,7 +249,11 @@ class OwnerAccessMiddleware:
                 headers["Cache-Control"] = "no-store, private, max-age=0"
                 headers["Pragma"] = "no-cache"
                 headers["Expires"] = "0"
-                headers["Referrer-Policy"] = "no-referrer"
+                # Google Identity Services needs the public login origin. Cross-origin
+                # requests expose no login path/query; private responses suppress all referrers.
+                headers["Referrer-Policy"] = (
+                    "strict-origin-when-cross-origin" if path == "/login" else "no-referrer"
+                )
                 headers["X-Content-Type-Options"] = "nosniff"
                 headers["X-Frame-Options"] = "DENY"
             await send(message)

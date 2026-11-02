@@ -194,6 +194,15 @@ def test_private_html_redirects_without_running_handlers(client, path):
     assert client.app.state.private_calls == []
 
 
+def test_only_google_login_page_allows_origin_referrers(client):
+    login = client.get("/login?next=/campaigns/private-record")
+    assert login.status_code == 200
+    assert login.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "no-store" in login.headers["cache-control"]
+    for path in ["/api/campaigns", "/auth/google/callback?code=private-code", "/session"]:
+        assert client.get(path).headers["referrer-policy"] == "no-referrer"
+
+
 @pytest.mark.parametrize(
     "path",
     [

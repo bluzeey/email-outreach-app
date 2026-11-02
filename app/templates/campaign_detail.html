@@ -379,8 +379,8 @@
                 buttons.push(`<button onclick="rejectCampaign()" class="btn btn-secondary">Reject</button>`);
             }
 
-            // Show Run button for CREATED, PAUSED, and COMPLETED (for newly added leads)
-            if (['created', 'paused', 'completed'].includes(campaign.status)) {
+            // A fresh upload waits for Analyze; Run is for prepared recipients.
+            if (['paused', 'completed'].includes(campaign.status)) {
                 const runLabel = campaign.status === 'completed' ? '▶ Run (New Leads)' : '▶ Run';
                 buttons.push(`<button onclick="runCampaign()" class="btn btn-primary">${runLabel}</button>`);
             }

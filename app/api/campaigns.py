@@ -208,7 +208,10 @@ async def upload_file(
             # INITIAL MODE: Standard upload for new campaign
             campaign.csv_filename = file.filename
             campaign.csv_storage_path = dest_path
-            campaign.status = CampaignStatus.PROFILING
+            # Saving a file does not start analysis. Reserve PROFILING for a
+            # manually started analysis so restarts do not report false failures.
+            campaign.status = CampaignStatus.CREATED
+            campaign.errors = []
             await session.commit()
             accepted = True
 
@@ -487,6 +490,9 @@ async def _run_analysis(
             await session.commit()
             existing_rows = []
         
+        campaign.status = CampaignStatus.PROFILING
+        await session.commit()
+
         # Start progress tracking
         if existing_rows:
             await progress_manager.update(

@@ -410,6 +410,27 @@ def test_disabled_live_flags_and_direct_followups_return_503(client, monkeypatch
     assert client.portal.call(stored_counts) == {"campaigns": 1, "rows": 0, "sends": 0}
 
 
+def test_upload_waiting_for_manual_analysis_survives_restart_without_error(application, monkeypatch):
+    origin = application.state.owner_access.origin
+    with TestClient(application, base_url=origin, follow_redirects=False) as first:
+        login(first, monkeypatch)
+        campaign_id = create_campaign(first)["id"]
+        root = f"/api/campaigns/{campaign_id}"
+        uploaded = first.post(
+            root + "/upload", headers={"Origin": origin},
+            files={"file": ("waiting.csv", CSV_DATA, "text/csv")},
+        )
+        assert uploaded.status_code == 200
+        assert first.get(root).json()["status"] == "created"
+        source = Path(first.portal.call(campaign_record, campaign_id)["source"])
+    with TestClient(application, base_url=origin, follow_redirects=False) as second:
+        login(second, monkeypatch)
+        saved = second.get(root).json()
+        assert saved["status"] == "created" and saved["errors"] == []
+        assert second.get(root + "/rows").json()["total"] == 0
+        assert source.read_bytes() == CSV_DATA
+
+
 def test_stored_campaign_source_and_rows_survive_fresh_lifespan(application, monkeypatch):
     origin = application.state.owner_access.origin
     with TestClient(application, base_url=origin, follow_redirects=False) as first:
@@ -424,6 +445,8 @@ def test_stored_campaign_source_and_rows_survive_fresh_lifespan(application, mon
             },
         )
         assert response.status_code == 200, response.text
+        saved = first.get(root).json()
+        assert saved["status"] == "created" and saved["errors"] == []
         row_id = first.portal.call(seed_reviewed_row, campaign_id)
         source = Path(first.portal.call(campaign_record, campaign_id)["source"])
     # This executes main.lifespan's engine.dispose(), then reopens durable SQLite.
@@ -434,6 +457,7 @@ def test_stored_campaign_source_and_rows_survive_fresh_lifespan(application, mon
         login(second, monkeypatch)
         assert second.get(root).json()["name"] == "Synthetic restart persistence"
         assert second.get(root).json()["dry_run"] is True
+        assert second.get(root).json()["errors"] == []
         rows = second.get(root + "/rows").json()
         assert rows["total"] == 1 and rows["rows"][0]["id"] == row_id
         assert second.portal.call(campaign_record, campaign_id)["source"] == str(source)

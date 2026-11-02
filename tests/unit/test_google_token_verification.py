@@ -49,13 +49,16 @@ def configure_certificate_transport(monkeypatch, public):
 
 
 @pytest.mark.parametrize("verified", [True, "true"])
+@pytest.mark.parametrize("later_page", [None, "GET", "HEAD"])
 def test_google_library_accepts_both_documented_verified_claims(
-    client, monkeypatch, signing_key, verified
+    client, monkeypatch, signing_key, verified, later_page
 ):
     signer, public = signing_key
     transport = configure_certificate_transport(monkeypatch, public)
     nonce = start_login(client)
     token = jwt.encode(signer, google_claims(nonce, email_verified=verified)).decode()
+    if later_page:
+        assert client.request(later_page, "/login").status_code == 200
     response = client.post(
         "/login/google", headers={"Origin": ORIGIN}, json={"credential": token}
     )
@@ -65,6 +68,24 @@ def test_google_library_accepts_both_documented_verified_claims(
     transport.assert_called_once_with(
         "https://www.googleapis.com/oauth2/v1/certs", method="GET", timeout=5
     )
+
+
+def test_real_token_from_another_browser_stays_rejected(client, monkeypatch, signing_key):
+    signer, public = signing_key
+    configure_certificate_transport(monkeypatch, public)
+    app, policy = make_app()
+    with TestClient(app, base_url=ORIGIN, follow_redirects=False) as other_browser:
+        other_browser.policy = policy
+        other_nonce = start_login(other_browser)
+    own_nonce = start_login(client)
+    assert own_nonce != other_nonce
+    token = jwt.encode(signer, google_claims(other_nonce)).decode()
+    response = client.post(
+        "/login/google", headers={"Origin": ORIGIN}, json={"credential": token}
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Reload the login page and try again"
+    assert client.cookies.get(client.policy.cookie_name) is None
 
 
 @pytest.mark.parametrize(

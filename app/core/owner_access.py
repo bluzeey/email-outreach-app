@@ -194,6 +194,17 @@ class OwnerAccess:
             return None
         return data
 
+    def login_challenge(self, connection: HTTPConnection) -> dict[str, str] | None:
+        try:
+            challenge = self.serializer("login").loads(
+                self.read_cookie(connection, self.challenge_name) or "", max_age=LOGIN_SECONDS
+            )
+        except BadData:
+            return None
+        if not isinstance(challenge, dict) or not _valid_login_nonce(challenge.get("nonce")):
+            return None
+        return challenge
+
     def same_origin(self, connection: HTTPConnection) -> bool:
         # Never derive the expected origin from Host, Forwarded, or X-Forwarded-*.
         return connection.headers.getlist("origin") == [self.origin]
@@ -368,18 +379,22 @@ def setup_owner_access(app: FastAPI, settings: Any = None) -> OwnerAccess | None
         destination = safe_next(request.query_params.get("next"))
         if request.state.owner_session:
             return RedirectResponse(destination, 303)
-        nonce = secrets.token_urlsafe(32)
+        challenge = access.login_challenge(request)
+        nonce = challenge["nonce"] if challenge else secrets.token_urlsafe(32)
         response = templates.TemplateResponse(
             request,
             "owner_login.html",
             {"client_id": access.client_id, "login_nonce": nonce, "next_path": destination},
         )
-        access.set_cookie(
-            response,
-            access.challenge_name,
-            access.serializer("login").dumps({"nonce": nonce}),
-            LOGIN_SECONDS,
-        )
+        if challenge is None:
+            access.set_cookie(
+                response,
+                access.challenge_name,
+                access.serializer("login").dumps({"nonce": nonce}),
+                LOGIN_SECONDS,
+            )
+        # Tabs share this HttpOnly cookie. Reuse its original challenge until it
+        # expires; refreshing a page must neither replace it nor extend its life.
         return response
 
     @app.post("/login/google", include_in_schema=False)
@@ -400,13 +415,8 @@ def setup_owner_access(app: FastAPI, settings: Any = None) -> OwnerAccess | None
             return JSONResponse({"detail": "Google credential required"}, 400)
         if not 1 <= len(data["credential"]) <= MAX_LOGIN_BYTES:
             return JSONResponse({"detail": "Google credential required"}, 400)
-        try:
-            challenge = access.serializer("login").loads(
-                access.read_cookie(request, access.challenge_name) or "", max_age=LOGIN_SECONDS
-            )
-            if not isinstance(challenge, dict) or not _valid_login_nonce(challenge.get("nonce")):
-                raise ValueError("Invalid challenge")
-        except (BadData, ValueError):
+        challenge = access.login_challenge(request)
+        if challenge is None:
             return JSONResponse({"detail": "Reload the login page and try again"}, 401)
         try:
             claims = await run_in_threadpool(_verify_google, data["credential"], access.client_id)
@@ -421,6 +431,8 @@ def setup_owner_access(app: FastAPI, settings: Any = None) -> OwnerAccess | None
         rejection = _claims_rejection(claims, access, challenge["nonce"], now)
         if rejection:
             logger.warning("Owner sign-in rejected: %s", rejection)
+            if rejection == "nonce_mismatch":
+                return JSONResponse({"detail": "Reload the login page and try again"}, 401)
             return JSONResponse({"detail": "Google sign-in could not be verified"}, 401)
         if claims["email"].casefold() != access.owner_email:
             return JSONResponse({"detail": "This account cannot access this private app"}, 403)

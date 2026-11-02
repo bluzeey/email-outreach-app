@@ -282,6 +282,107 @@ def test_full_login_session_logout_and_public_client_id(client, monkeypatch):
     assert client.get("/campaigns").status_code == 303
 
 
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+def test_another_login_page_does_not_invalidate_pending_signin(client, monkeypatch, method):
+    first_nonce = start_login(client)
+    original_cookie = client.cookies.get(client.policy.challenge_name)
+    another_page = client.request(method, "/login")
+    assert another_page.status_code == 200
+    assert another_page.headers.get_list("set-cookie") == []
+    assert client.cookies.get(client.policy.challenge_name) == original_cookie
+    if method == "GET":
+        assert f'data-nonce="{first_nonce}"' in another_page.text
+    mock_google(monkeypatch, google_claims(first_nonce))
+    assert client.post(
+        "/login/google", headers={"Origin": ORIGIN}, json={"credential": "fake"}
+    ).status_code == 200
+
+
+def test_reloading_login_does_not_extend_original_challenge_lifetime(client, monkeypatch):
+    started = int(time.time())
+    monkeypatch.setattr(TimestampSigner, "get_timestamp", lambda self: started)
+    first_nonce = start_login(client)
+    original_cookie = client.cookies.get(client.policy.challenge_name)
+    monkeypatch.setattr(TimestampSigner, "get_timestamp", lambda self: started + 599)
+    page = client.get("/login")
+    assert page.headers.get_list("set-cookie") == []
+    assert client.cookies.get(client.policy.challenge_name) == original_cookie
+    monkeypatch.setattr(TimestampSigner, "get_timestamp", lambda self: started + 601)
+    verifier = mock_google(monkeypatch, google_claims(first_nonce))
+    assert client.post(
+        "/login/google", headers={"Origin": ORIGIN}, json={"credential": "fake"}
+    ).status_code == 401
+    verifier.assert_not_called()
+    assert start_login(client) != first_nonce
+    assert client.cookies.get(client.policy.challenge_name) != original_cookie
+
+
+@pytest.mark.parametrize("payload", [None, [], {}, {"nonce": "short"}, {"nonce": "é" * 43}])
+def test_login_page_replaces_invalid_signed_challenges(client, payload):
+    bad_cookie = client.policy.serializer("login").dumps(payload)
+    response = client.get(
+        "/login", headers={"Cookie": f"{client.policy.challenge_name}={bad_cookie}"}
+    )
+    assert response.status_code == 200
+    assert response.headers.get_list("set-cookie")
+    assert client.cookies.get(client.policy.challenge_name) != bad_cookie
+    assert re.search(r'data-nonce="[A-Za-z0-9_-]{43}"', response.text)
+
+
+@pytest.mark.parametrize("kind", ["tampered", "different_owner", "future", "duplicate"])
+def test_untrusted_challenge_is_rejected_then_replaced(client, monkeypatch, kind):
+    policy = client.policy
+    signer = policy.serializer("login")
+    payload = {"nonce": "x" * 43}
+    good = signer.dumps(payload)
+    if kind == "tampered":
+        value = good + "invalid"
+    elif kind == "different_owner":
+        value = replace(policy, owner_email="someone-else@example.invalid").serializer(
+            "login"
+        ).dumps(payload)
+    elif kind == "future":
+        class FutureSigner(TimestampSigner):
+            def get_timestamp(self):
+                return int(time.time()) + 60
+        signer.signer = FutureSigner
+        value = signer.dumps(payload)
+    else:
+        value = f"{good}; {policy.challenge_name}={good}"
+    cookie_header = f"{policy.challenge_name}={value}"
+    verifier = mock_google(monkeypatch, google_claims(payload["nonce"]))
+    assert client.post(
+        "/login/google", headers={"Origin": ORIGIN, "Cookie": cookie_header},
+        json={"credential": "fake"},
+    ).status_code == 401
+    verifier.assert_not_called()
+    page = client.get("/login", headers={"Cookie": cookie_header})
+    assert page.status_code == 200 and page.headers.get_list("set-cookie")
+    assert f'data-nonce="{payload["nonce"]}"' not in page.text
+
+
+def test_competing_initial_pages_recover_by_reloading(client, monkeypatch, caplog):
+    stale_nonce = start_login(client)
+    client.cookies.clear()  # Another concurrent initial page had no cookie yet.
+    current_nonce = start_login(client)
+    current_cookie = client.cookies.get(client.policy.challenge_name)
+    mock_google(monkeypatch, google_claims(stale_nonce))
+    response = client.post(
+        "/login/google", headers={"Origin": ORIGIN}, json={"credential": "fake"}
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Reload the login page and try again"
+    assert client.cookies.get(client.policy.cookie_name) is None
+    assert client.cookies.get(client.policy.challenge_name) == current_cookie
+    assert "nonce_mismatch" in caplog.text
+    assert stale_nonce not in caplog.text and current_nonce not in caplog.text
+    assert start_login(client) == current_nonce
+    mock_google(monkeypatch, google_claims(current_nonce))
+    assert client.post(
+        "/login/google", headers={"Origin": ORIGIN}, json={"credential": "fake"}
+    ).status_code == 200
+
+
 @pytest.mark.parametrize(
     "claims_patch",
     [
